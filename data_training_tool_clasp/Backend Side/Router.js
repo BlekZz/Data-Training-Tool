@@ -1,0 +1,119 @@
+/**
+ * Router.js
+ * 負責處理 HTTP GET 請求 (可用於測試 Endpoint 是否存活)
+ */
+function doGet(e) {
+  return ContentService.createTextOutput("Data Judgment Training Platform - Backend API is running.")
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
+// 產生唯一的 ID 工具
+function generateId(prefix) {
+  return prefix + "_" + new Date().getTime() + "_" + Math.floor(Math.random() * 1000);
+}
+
+/**
+ * 處理 HTTP POST 請求 (主要 API 接口)
+ */
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error("Empty POST data received.");
+    }
+    const postData = JSON.parse(e.postData.contents);
+    const action = postData.action;
+    
+    // 允許前端帶入 API Key，如果沒帶就用環境變數的 (測試用)
+    const apiKey = postData.apiKey || CONFIG.GEMINI_API_KEY; 
+    const userEmail = postData.userEmail || "anonymous@example.com";
+
+    let responseData = {};
+
+    switch(action) {
+      case "register-key":
+        // 驗證 API Key 的邏輯可後續實作，目前先回傳成功
+        responseData = { status: "success", message: "API Key Validate - Mocked Success" };
+        break;
+        
+      case "generate-question": {
+        const { domain, difficulty } = postData;
+        const prompts = PromptBuilder.buildGenerationPrompt(domain, difficulty);
+        const aiResult = GeminiClient.callApi(apiKey, prompts.systemInstruction, prompts.userPrompt, false);
+        
+        const questionId = generateId("Q");
+        const dbRecord = {
+          question_id: questionId,
+          user_email: userEmail,
+          difficulty: difficulty,
+          domain: domain,
+          prompt_version: "v1.0",
+          title: aiResult.title,
+          business_context: aiResult.business_context,
+          instruction: aiResult.instruction,
+          sample_data: aiResult.sample_data,
+          expected_health_check_answers: aiResult.expected_health_check_answers,
+          question_tab_url: postData.question_tab_url || ''
+        };
+        Database.saveQuestion(dbRecord);
+        Database.saveAuditLog({ user_email: userEmail, action_type: "generate-question", related_id: questionId, status: "success" });
+        
+        responseData = { status: "success", question_id: questionId, data: aiResult };
+        break;
+      }
+      
+      case "submit-response": {
+        const { question_id, user_health_check_sop, user_cleaned_data } = postData;
+        
+        const questionRecord = Database.getQuestionData(question_id);
+        if (!questionRecord) throw new Error("Question not found: " + question_id);
+        
+        const responseId = generateId("R");
+        Database.saveResponse({
+          response_id: responseId,
+          question_id: question_id,
+          user_email: userEmail,
+          user_health_check_sop: user_health_check_sop,
+          user_cleaned_data: user_cleaned_data
+        });
+        
+        const prompts = PromptBuilder.buildEvaluationPrompt(
+          questionRecord.business_context, 
+          questionRecord.expected_health_check_answers, 
+          user_health_check_sop, 
+          user_cleaned_data
+        );
+        const aiScore = GeminiClient.callApi(apiKey, prompts.systemInstruction, prompts.userPrompt, false);
+        
+        const scoreId = generateId("S");
+        Database.saveScore({
+          score_id: scoreId,
+          question_id: question_id,
+          response_id: responseId,
+          user_email: userEmail,
+          overall_score: aiScore.overall_score,
+          format_score: aiScore.format_score,
+          business_logic_score: aiScore.business_logic_score,
+          strategy_score: aiScore.strategy_score,
+          completeness_score: aiScore.completeness_score,
+          feedback_comment: aiScore.feedback_comment
+        });
+        Database.saveAuditLog({ user_email: userEmail, action_type: "submit-response", related_id: responseId, status: "success" });
+        
+        responseData = { status: "success", score: aiScore };
+        break;
+      }
+      
+      default:
+        responseData = { status: "error", message: "Unknown action: " + action };
+    }
+
+    return ContentService.createTextOutput(JSON.stringify(responseData))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}

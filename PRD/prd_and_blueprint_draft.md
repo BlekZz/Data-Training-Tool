@@ -184,13 +184,14 @@ Data Judgment Training Platform
 
 ### 6.1.3 Question Tab
 每一題應包含：
-- 題目資訊
-- sample data
+- 任務情境 (Business Context) 與題目資訊
+- sample data (微型高密度，約 10~15 筆)
 - instruction
-- answer input area
+- Health Check SOP 區塊（要求填寫：異常欄位、錯誤類型、處置策略）
+- 清洗後資料填寫區
 - metadata（question_id, difficulty, domain, created_at）
 - submit button
-- score area（提交後顯示）
+- score 與 AI 盲區雷達診斷區（提交後顯示）
 
 ### 6.1.4 History / Summary
 MVP 可簡化為：
@@ -213,13 +214,13 @@ Backend 必須集中管理：
 - API status
 
 ### 6.2.3 Evaluation Output
-至少回傳：
+至少回傳（維度與雷達圖相關）：
 - overall_score
-- structure_score
-- clarity_score
-- logic_score
-- judgment_score
-- feedback_comment
+- format_score
+- business_logic_score
+- strategy_score
+- completeness_score
+- feedback_comment (AI 盲區雷達診斷文字版)
 
 ### 6.2.4 Logging
 需記錄：
@@ -339,10 +340,10 @@ Backend 必須集中管理：
 - question_id
 - user_id
 - overall_score
-- structure_score
-- clarity_score
-- logic_score
-- judgment_score
+- format_score
+- business_logic_score
+- strategy_score
+- completeness_score
 - evaluator_version
 - feedback_comment
 - scored_at
@@ -1564,4 +1565,42 @@ Scores 表必記：
 - multi-backend support
 - voice / transcript support
 - anti-cheating heuristics
+
+---
+
+# 16. Domains & Difficulty Levels
+
+## 16.1 Domain (產業類型) 定義
+
+在生成題目時，需根據選擇的 `domain` 套用對應的產業地雷與情境：
+
+1.  **電商與零售 (E-commerce / Retail)**
+    *   **常見雷區**：退貨金額大於購買金額、訂單/付款/出貨的時間序顛倒、折扣碼疊加後金額變負數、庫存為負、狀態矛盾（已取消卻顯示已出貨）。
+    *   **訓練重點**：時間序列邏輯、金額核算。
+2.  **金融與支付 (FinTech / Banking)**
+    *   **常見雷區**：身分證/統編邏輯校驗碼錯誤、未成年開戶（開戶日 - 生日 < 18）、異常的單筆交易極值、幣別與匯率換算錯誤、帳戶狀態已凍結卻有新交易。
+    *   **訓練重點**：嚴格的格式校驗、極值敏感度。
+3.  **醫療與健康照護 (Healthcare)**
+    *   **常見雷區**：生理數據不合理（例如心跳 300、體重 5kg 的成人）、診斷時間早於入院時間、男性出現婦科診斷紀錄、年齡與疾病不符（10 歲得阿茲海默症）。
+    *   **訓練重點**：跨欄位的 Domain Knowledge 常識判斷。
+4.  **行銷與 CRM (Marketing / CRM)**
+    *   **常見雷區**：Email 網域無效（如 `@gmaill.con`）、手機號碼區碼與長度錯誤、一個使用者有多個變體的 User ID（重複註冊）、活動點擊時間早於 Email 發送時間。
+    *   **訓練重點**：字串清理、重複值去重 (Deduplication)、關聯性判斷。
+
+## 16.2 Difficulty (難度等級) 定義
+
+在生成題目時，需根據 `difficulty` 調整情境的隱蔽度與錯誤的複雜度：
+
+*   **Level 1: 實習生入職 (Basic)**
+    *   **地雷比例**：格式錯誤 60%、商業邏輯 40%
+    *   **Context 特色**：「明示型」條件（例如：直接說明年齡小於18不能算）。
+    *   **目標**：培養看文件做事的習慣，熟練處理常見格式髒數據，抓出字面上違規。
+*   **Level 2: 獨立接案 (Intermediate)**
+    *   **地雷比例**：格式錯誤 30%、商業邏輯 70%
+    *   **Context 特色**：「跨欄位/暗示型」條件（例如：要求計算 Q1 營收，需自行推導退款不計入、日期需篩選）。
+    *   **目標**：培養對「合理性」的直覺，找出跨欄位的邏輯矛盾。
+*   **Level 3: 拆彈專家 (Advanced / Edge Cases)**
+    *   **地雷比例**：格式錯誤 10%、極端商業邏輯 90%
+    *   **Context 特色**：「多重條件交錯」（例如：VIP與一般會員退貨天數不同，特價品另有規定）。
+    *   **目標**：訓練在複雜業務規則下的邏輯判斷，需綜合多個欄位條件才能揪出異常。
 
