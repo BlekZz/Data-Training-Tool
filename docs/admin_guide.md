@@ -4,12 +4,17 @@
 
 ---
 
-## 🏗️ 系統架構簡述
+## 🏗️ 系統架構與重大變更
 
-平台採用 **"Central Backend, Distributed Frontend"** 模式：
-*   **Central Database**: 單一 Google Sheet 儲存所有紀錄。
-*   **Central Backend**: 部署於個人 Gmail 的 GAS Web App。
-*   **User Sheets**: 使用者各自擁有的副本，透過 API 聯繫後端。
+### 1. 更換資料庫 (Database Swap)
+若需要建立新的資料庫副本或更換 Google Sheet：
+1.  **修改 `Config.js`**: 將 `DATABASE_SHEET_ID` 替換為新 Sheet 的 ID。
+2.  **重新執行 Setup**: 在 `DatabaseSetup.js` 中執行 `setupDatabaseHeaders()`，在新 Sheet 中建立所有表頭。
+3.  **重新部署**: **非常重要！** 每次修改 `Config.js` 後必須點選「部署」->「建立新版本」，否則 Web App 依然會寫入舊的資料庫。
+
+### 2. 管理 API Token 狀態
+*   **後端 Token**: 在 GAS 的「指令碼屬性」設定 `TEST_API_KEY` 僅供後端測試。
+*   **前端 Token (BYOK)**: 系統設計為「使用者自備 Token」，這能避免導師帳號的 Quota 被實習生耗盡。若實習生報錯，首要檢查其 `Home` 分頁的 Key 是否有效。
 
 ---
 
@@ -45,6 +50,16 @@
 
 ---
 
-## ⚠️ 重大更動注意事項
-*   **修改程式碼後**: 必須執行 `clasp push` 並在 GAS 後台 **「建立新版本部署 (New Version Deployment)」**。
-*   **API Key 安全**: 嚴禁將 API Key 寫死在代碼中，請使用 GAS 的「指令碼屬性 (Script Properties)」存儲。
+## 🛡️ 安全性與 Debug 流程
+
+### 1. 偵錯順序 (Troubleshooting Flow)
+當系統不穩定時，請遵循以下檢查順序：
+1.  **檢查 AuditLog**: 這是最重要的步驟。如果是程式報錯，這裡會有 `error_message`。
+2.  **驗證使用者權限**: 檢查 `Users` 表格中該 Email 的 `status` 是否為 `active`。
+3.  **檢查模型狀態**: 在 `SystemConfig` 確認模型名稱是否仍然有效（Google 有時會更新模型名稱後綴）。
+4.  **確認 Web App 版本**: 確認 Web App 的 URL 是否為最新部署的版本。
+
+### 2. 重置與清理
+*   **清空資料**: 若要清空所有紀錄，直接刪除 Questions/Responses/Scores 下方的資料列即可，但請**保留標題列**。
+*   **重新部署**: 任何後端 `.js` 檔案的更動，若未進行「New Deployment」，外部使用者都不會吃到更新。
+
