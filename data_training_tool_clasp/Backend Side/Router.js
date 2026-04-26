@@ -36,6 +36,8 @@ function doPost(e) {
         break;
         
       case "generate-question": {
+        Database.validateUserAccess(postData);
+        
         const { domain, difficulty } = postData;
         const prompts = PromptBuilder.buildGenerationPrompt(domain, difficulty);
         const aiResult = GeminiClient.callApi(apiKey, prompts.systemInstruction, prompts.userPrompt, false);
@@ -46,7 +48,7 @@ function doPost(e) {
           user_email: userEmail,
           difficulty: difficulty,
           domain: domain,
-          prompt_version: "v1.0",
+          prompt_version: prompts.promptVersion || "v1.0",
           title: aiResult.title,
           business_context: aiResult.business_context,
           instruction: aiResult.instruction,
@@ -62,6 +64,8 @@ function doPost(e) {
       }
       
       case "submit-response": {
+        Database.validateUserAccess(postData);
+        
         const { question_id, user_health_check_sop, user_cleaned_data } = postData;
         
         const questionRecord = Database.getQuestionData(question_id);
@@ -95,6 +99,7 @@ function doPost(e) {
           business_logic_score: aiScore.business_logic_score,
           strategy_score: aiScore.strategy_score,
           completeness_score: aiScore.completeness_score,
+          evaluator_version: prompts.promptVersion || "v1.0",
           feedback_comment: aiScore.feedback_comment
         });
         Database.saveAuditLog({ user_email: userEmail, action_type: "submit-response", related_id: responseId, status: "success" });
@@ -111,6 +116,23 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {
+    let email = "unknown";
+    let act = "unknown";
+    try {
+      if (e && e.postData && e.postData.contents) {
+        const pd = JSON.parse(e.postData.contents);
+        email = pd.userEmail || email;
+        act = pd.action || act;
+      }
+    } catch(err) {}
+    
+    Database.saveAuditLog({ 
+      user_email: email, 
+      action_type: act, 
+      status: "error", 
+      error_message: error.toString() 
+    });
+
     return ContentService.createTextOutput(JSON.stringify({
       status: "error",
       message: error.toString()

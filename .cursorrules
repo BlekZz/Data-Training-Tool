@@ -1,0 +1,7 @@
+# Data Training Tool - Agent Rules & Skills
+
+## Clasp Deployment Skill
+When working on Google Apps Script (`.js` or `.html` files in the `data_training_tool_clasp` directory):
+1. **Auto-Push on Change**: Whenever code is modified or debugged, the agent MUST automatically run `cmd /c "npx clasp push"` in the corresponding directory (`User Side` or `Backend Side`).
+2. **Do Not Ask for Deployment**: The agent should directly execute the push command instead of asking the user to manually deploy or run `clasp push` themselves, unless it's a destructive change that requires manual permission (like deleting a remote file) or requires an initial setup.
+3. **Notify User**: After successfully pushing, the agent should briefly notify the user that the code has been updated to the Apps Script project.

@@ -51,7 +51,6 @@
       google.script.run
         .withSuccessHandler(function(result) {
           clearInterval(interval);
-          google.script.run.handleSubmitSuccess(result);
           google.script.host.close();
         })
         .withFailureHandler(function(error) {
@@ -59,7 +58,7 @@
           google.script.run.showErrorMessage(error.toString());
           google.script.host.close();
         })
-        .runSubmitLogic(payload);
+        .performFullSubmit(payload);
     };
   </script>
 </body>

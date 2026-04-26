@@ -9,25 +9,25 @@
 ---
 
 ## 1. Users
-以 `user_email` 為主要識別。
+以 `user_email` 為主要識別。系統會自動抓取最新的 `user_sheet_url` 進行追蹤。
 
 | 欄位 | 說明 |
 |------|------|
-| `user_id` | Primary Key |
+| `user_id` | PK, 自動生成 `U_<timestamp>` |
 | `user_email` | Unique, 主要識別 |
-| `user_name` | 使用者名稱 |
-| `user_sheet_id` | 使用者專屬 Sheet 的 ID |
-| `user_sheet_url` | 使用者專屬 Sheet 的 URL |
+| `user_name` | 使用者名稱 (自動擷取 Email 前綴) |
+| `user_sheet_id` | 使用者最近一次使用的 Sheet ID |
+| `user_sheet_url` | 使用者最近一次使用的 Sheet URL |
 | `status` | 帳號狀態 (active / inactive) |
-| `allowed_difficulty` | 允許的難度範圍 |
-| `allowed_domain` | 允許的產業領域 |
-| `weekly_limit` | 每週生成/提交上限 (MVP 測試 token usage) |
-| `key_status` | API Key 狀態 (Valid / Invalid) |
+| `allowed_difficulty` | 允許的難度範圍 (Phase 5) |
+| `allowed_domain` | 允許的產業領域 (Phase 5) |
+| `weekly_limit` | 每週生成上限 (Phase 5) |
+| `key_status` | API Key 狀態 (Phase 5) |
 | `last_validated_at` | 最後一次驗證時間 |
 | `created_at` | 建立時間 |
 | `updated_at` | 更新時間 |
 
-> **🔧 待辦**: `weekly_limit` 檢查邏輯尚未在 Router.js 中實作。
+---
 
 ## 2. Questions
 每次 AI 生成題目時自動寫入一筆。
@@ -83,10 +83,11 @@
 
 | 欄位 | 說明 |
 |------|------|
-| `prompt_version` | 版本號 (e.g. `v1.0`) |
+| `prompt_version` | 版本號 (e.g. `gen_v1.0`, `eval_v1.0`) |
 | `type` | generation / evaluation |
-| `notes` | 版本備註 |
-| `status` | active / deprecated |
+| `system_instruction` | 核心人設與格式指令 |
+| `user_prompt_template` | 包含 `${domain}` 等變數的模板 |
+| `is_active` | 是否為目前啟用的版本 (TRUE/FALSE) |
 | `created_at` | 建立時間 |
 
 ## 6. SystemConfig
@@ -115,10 +116,8 @@
 |------|------|
 | `log_id` | 唯一識別 |
 | `user_email` | 操作者 |
-| `action_type` | 動作類型 (generate-question / submit-response) |
-| `related_id` | 關聯的 question_id 或 response_id |
+| `action_type` | 動作類型 |
+| `related_id` | 關聯 ID |
 | `status` | success / error |
-| `error_message` | 若失敗，記錄錯誤訊息 |
+| `error_message` | 錯誤堆疊訊息 |
 | `timestamp` | 操作時間 |
-
-> **🔧 待辦**: AuditLog 寫入邏輯尚未在 Router.js 中實作。

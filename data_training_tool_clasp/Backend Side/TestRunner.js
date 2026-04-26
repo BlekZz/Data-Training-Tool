@@ -7,8 +7,9 @@
 // 直接在 GAS 後台執行此函式，確認 Gemini API 是否可正常呼叫
 // ============================================================
 function test_GeminiConnection() {
-  // ⚠️ 此處直接填入測試用 API Key，測試後請移除
-  const TEST_API_KEY = "AIzaSyBa3Q0RjVKqrKlqM2aAkDzPwIj7Veqf71w";
+  // ⚠️ 此處改由 GAS 的 Script Properties 讀取，避免外洩
+  const TEST_API_KEY = PropertiesService.getScriptProperties().getProperty("TEST_API_KEY");
+  if (!TEST_API_KEY) throw new Error("⚠️ 請先至 GAS 專案設定 (Project Settings ⚙️) -> 指令碼屬性 (Script Properties) 新增 TEST_API_KEY");
   
   const systemInstruction = "你是一個測試機器人，請回覆一個簡單的 JSON 物件。";
   const userPrompt = "請回覆: {\"status\": \"ok\", \"message\": \"Gemini 連線測試成功！\"}";
@@ -25,7 +26,8 @@ function test_GeminiConnection() {
 // 測試 2: 端對端測試生成題目
 // ============================================================
 function test_GenerateQuestion() {
-  const TEST_API_KEY = "AIzaSyBa3Q0RjVKqrKlqM2aAkDzPwIj7Veqf71w";
+  const TEST_API_KEY = PropertiesService.getScriptProperties().getProperty("TEST_API_KEY");
+  if (!TEST_API_KEY) throw new Error("⚠️ 請先至 GAS 專案設定 (Project Settings ⚙️) -> 指令碼屬性 (Script Properties) 新增 TEST_API_KEY");
   const TEST_DOMAIN = "電商與零售 (E-commerce / Retail)";
   const TEST_DIFFICULTY = "Level 1";
 
@@ -76,7 +78,8 @@ function test_DatabaseWrite() {
 // 診斷工具: 列出所有可用模型
 // ============================================================
 function diagnose_Models() {
-  const TEST_API_KEY = "AIzaSyBa3Q0RjVKqrKlqM2aAkDzPwIj7Veqf71w";
+  const TEST_API_KEY = PropertiesService.getScriptProperties().getProperty("TEST_API_KEY");
+  if (!TEST_API_KEY) throw new Error("⚠️ 請先至 GAS 專案設定 (Project Settings ⚙️) -> 指令碼屬性 (Script Properties) 新增 TEST_API_KEY");
   const result = GeminiClient.listAvailableModels(TEST_API_KEY);
   Logger.log("📋 可用模型列表:\n" + result);
 }

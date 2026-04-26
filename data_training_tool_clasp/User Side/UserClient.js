@@ -114,7 +114,9 @@ function runGenerationLogic() {
     apiKey: apiKey,
     userEmail: userEmail,
     domain: domain,
-    difficulty: difficulty
+    difficulty: difficulty,
+    userSheetId: ss.getId(),
+    userSheetUrl: ss.getUrl()
   };
 
   const options = {
@@ -280,8 +282,25 @@ function findRowByText(sheet, searchText) {
 // 輔助函式：渲染 AI 評分結果到 Question Tab
 // ============================================================
 function renderFeedback(sheet, score) {
-  const lastRow = sheet.getLastRow();
-  const startRow = lastRow + 2;
+  // 動態尋找是否已有舊的評分區塊
+  let startRow = findRowByText(sheet, '📊 AI 盲區雷達診斷');
+  
+  if (startRow !== -1) {
+    // 清除舊的評分區塊 (從 startRow 往下清空)
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= startRow) {
+      const oldRange = sheet.getRange(startRow, 1, lastRow - startRow + 1, sheet.getLastColumn());
+      oldRange.breakApart(); // 解除合併儲存格
+      oldRange.clear();      // 清除內容、顏色、格式
+      // 將列高恢復預設
+      for (let r = startRow; r <= lastRow; r++) {
+        sheet.setRowHeight(r, 21);
+      }
+    }
+  } else {
+    // 第一次提交，接在最後一列的下方
+    startRow = sheet.getLastRow() + 2;
+  }
 
   // 標題
   sheet.getRange(startRow, 1, 1, 6).merge()
@@ -310,6 +329,24 @@ function renderFeedback(sheet, score) {
     .setVerticalAlignment('top');
   sheet.setRowHeight(startRow + 4, 120);
 
+  // === 新增：標準答案與清洗範本 ===
+  const stdStart = startRow + 6;
+  sheet.getRange(stdStart, 1, 1, 6).merge()
+    .setValue('✅ 標準健檢解答')
+    .setBackground('#4A4A8A').setFontColor('#FFFFFF').setFontWeight('bold');
+  sheet.getRange(stdStart + 1, 1, 1, 6).merge()
+    .setValue(score.standard_answers || '（無提供資料）')
+    .setWrap(true).setBackground('#F8F9FA').setVerticalAlignment('top');
+  sheet.setRowHeight(stdStart + 1, 100);
+
+  sheet.getRange(stdStart + 3, 1, 1, 6).merge()
+    .setValue('📄 清洗數據範本')
+    .setBackground('#4A4A8A').setFontColor('#FFFFFF').setFontWeight('bold');
+  sheet.getRange(stdStart + 4, 1, 1, 6).merge()
+    .setValue(score.cleaned_data_template || '（無提供資料）')
+    .setWrap(true).setBackground('#F8F9FA').setVerticalAlignment('top');
+  sheet.setRowHeight(stdStart + 4, 100);
+
   // 自動捲動到結果
   sheet.setActiveRange(sheet.getRange(startRow, 1));
 }
@@ -336,9 +373,16 @@ function submitCurrentResponse() {
     return SpreadsheetApp.getUi().alert('⚠️ 請先在 Home 頁面填寫 API Key。');
   }
 
-  // --- Step 1: 讀取 SOP 錨點 ---
-  const sopDataRow = parseInt(sheet.getRange('Z2').getValue());
-  const sopEndRow  = parseInt(sheet.getRange('Z3').getValue());
+  // --- Step 1: 動態定位 SOP 區塊 ---
+  const sopLabelRow = findRowByText(sheet, '🧠 步驟一：健檢診斷 SOP');
+  const cleanLabelRow = findRowByText(sheet, '✨ 步驟二：清洗後資料');
+  
+  if (sopLabelRow === -1 || cleanLabelRow === -1) {
+    return SpreadsheetApp.getUi().alert('⚠️ 找不到 SOP 或清洗資料區塊的標題，請確認格式是否被破壞。');
+  }
+
+  const sopDataRow = sopLabelRow + 2;
+  const sopEndRow  = cleanLabelRow - 2; // 推算 SOP 結束列
 
   if (!sopDataRow || !sopEndRow) {
     return SpreadsheetApp.getUi().alert('\u26a0\ufe0f \u7121\u6cd5\u8b80\u53d6\u984c\u76ee\u7d50\u69cb\u8cc7\u8a0a\uff0c\u8acb\u78ba\u8a8d\u4f7f\u7528\u7684\u662f\u7cfb\u7d71\u7522\u751f\u7684\u984c\u76ee\u5206\u9801\u3002');
@@ -359,18 +403,38 @@ function submitCurrentResponse() {
     return SpreadsheetApp.getUi().alert('\u26a0\ufe0f \u6b65\u9a5f\u4e00\u7684\u5065\u6aa2 SOP \u8868\u683c\u662f\u7a7a\u7684\uff0c\u8acb\u81f3\u5c11\u586b\u5beb\u4e00\u7b46\u8a3a\u65b7\u8a18\u9304\u3002');
   }
 
-  // --- Step 2: 讀取清洗後資料 ---
-  const cleanTitleRow = parseInt(sheet.getRange('Z4').getValue());
-  const cleanEndRow   = parseInt(sheet.getRange('Z5').getValue());
+  // --- Step 2: 動態定位清洗區塊 ---
+  const cleanTitleRow = cleanLabelRow + 1;
+  let cleanEndRow = findRowByText(sheet, '📊 AI 盲區雷達診斷');
+  if (cleanEndRow !== -1) {
+    cleanEndRow = cleanEndRow - 2;
+  } else {
+    cleanEndRow = sheet.getLastRow();
+  }
 
   if (!cleanTitleRow || !cleanEndRow) {
-    return SpreadsheetApp.getUi().alert('\u26a0\ufe0f \u7121\u6cd5\u8b80\u53d6\u6e05\u6d17\u5340\u5ea7\u6a19\uff0c\u8acb\u78ba\u8a8d\u4f7f\u7528\u7684\u662f\u7cfb\u7d71\u7522\u751f\u7684\u984c\u76ee\u5206\u9801\u3002');
+    return SpreadsheetApp.getUi().alert('⚠️ 無法讀取清洗區座標，請確認使用的是系統產生的題目分頁。');
   }
 
   const colCount    = sheet.getLastColumn();
   const titleValues = sheet.getRange(cleanTitleRow, 1, 1, colCount).getValues()[0];
-  const cleanCols   = titleValues.map(h => String(h).trim()).filter(h => h !== '');
-  const usedCols    = cleanCols.length;
+  
+  // 反向尋找最後一個有文字的標題，確保中間即使有空白欄位也能正確框出範圍
+  let usedCols = 0;
+  for (let i = titleValues.length - 1; i >= 0; i--) {
+    if (String(titleValues[i]).trim() !== '') {
+      usedCols = i + 1;
+      break;
+    }
+  }
+
+  // 如果這行沒寫標題就直接防呆退出
+  if (usedCols === 0) {
+    return SpreadsheetApp.getUi().alert('⚠️ 請在步驟二的淡綠色區塊輸入你要留下的「欄位標題」。');
+  }
+
+  // 把前 usedCols 欄保留下來（包含中間的空字串），確保資料對齊
+  const cleanCols = titleValues.slice(0, usedCols).map(h => String(h).trim());
 
   let userCleanedData = [];
   if (usedCols > 0) {
@@ -395,6 +459,17 @@ function submitCurrentResponse() {
 
   if (confirm !== ui.Button.OK) return;
 
+  const payload = {
+    action: 'submit-response',
+    apiKey: apiKey,
+    userEmail: userEmail,
+    question_id: questionId,
+    user_health_check_sop: userHealthCheckSop,
+    user_cleaned_data: userCleanedData,
+    userSheetId: ss.getId(),
+    userSheetUrl: ss.getUrl()
+  };
+
   // --- Step 3: 開啟評分彈窗 (由彈窗腳本執行 POST) ---
   const html = HtmlService.createHtmlOutputFromFile('SubmitLoadingDialog')
       .setWidth(400)
@@ -405,6 +480,20 @@ function submitCurrentResponse() {
   html.append('<script>var payload = ' + JSON.stringify(payload) + ';</script>');
   
   ui.showModalDialog(html, 'AI 評分中...');
+}
+
+/**
+ * 完整提交流程：負責執行 fetch 並跳出 UI 回饋，確保彈窗不會提早關閉
+ */
+function performFullSubmit(payload) {
+  try {
+    const result = runSubmitLogic(payload);
+    handleSubmitSuccess(result);
+    return result;
+  } catch (e) {
+    showErrorMessage(e.toString());
+    return { status: 'error', message: e.toString() };
+  }
 }
 
 /**
@@ -433,6 +522,37 @@ function handleSubmitSuccess(result) {
   
   if (result.status === 'success') {
     renderFeedback(sheet, result.score);
+
+    // --- 寫入分數到 Home 分頁 ---
+    try {
+      const home = ss.getSheetByName('Home');
+      if (home) {
+        const domain = home.getRange('B5').getValue();
+        const difficulty = home.getRange('B6').getValue();
+        const date = new Date().toLocaleString();
+        const totalScore = result.score.overall_score + ' / 20';
+        const feedback = result.score.feedback_comment;
+
+        const historyStartRow = 10;
+        // 檢查是否已有標題
+        if (home.getRange(historyStartRow, 1).getValue() !== '做題日期') {
+          home.getRange(historyStartRow, 1, 1, 5)
+            .setValues([['做題日期', '產業領域', '難度', '總分', '文字診斷']])
+            .setBackground('#E8E8F5').setFontWeight('bold');
+          
+          home.setColumnWidth(4, 80); // 總分寬度
+          home.setColumnWidth(5, 500); // 評語寬度
+        }
+        // 在標題下方插入新列
+        home.insertRowAfter(historyStartRow);
+        home.getRange(historyStartRow + 1, 1, 1, 5)
+            .setValues([[date, domain, difficulty, totalScore, feedback]])
+            .setWrap(true).setVerticalAlignment('top');
+      }
+    } catch(e) {
+      console.warn("Failed to write to Home: " + e);
+    }
+
     SpreadsheetApp.getUi().alert('✅ 評分完成！請往下捲動查看「📊 AI 盲區雷達診斷」區塊。');
   } else {
     showErrorMessage(result.message);

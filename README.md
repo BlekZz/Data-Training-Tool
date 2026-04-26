@@ -8,6 +8,7 @@
 *   **前端 (User UI)**：每位使用者擁有獨立的 Google Sheet，具備自動渲染、進度動畫與座標錨點技術。
 *   **後端 (Backend)**：單一 GAS Web App 集中處理核心邏輯，支援 3 層重試與 Fallback 機制。
 *   **資料庫 (Database)**：中央 Google Sheet 存儲所有 Questions/Responses/Scores，並具備 AuditLog 稽核軌跡。
+*   **動態提示詞 (Dynamic Prompts)**：Prompt 本體存於資料庫中，支援即時微調與版本追溯，無需重新部署。
 *   **成本模型 (BYOK)**：使用者自備 API Key，系統自動偵測並切換 Gemini 2.0 Pro/Flash 模型。
 
 ## 專案結構 (Project Structure)
@@ -53,12 +54,24 @@ Data Training Tool/
 
 > **注意**：Google Workspace 企業帳號在部署 Web App 時受限於組織 IT 政策，建議後端使用個人 Gmail 帳號部署。
 
+## 環境變數設定 (Environment Variables)
+
+為了保護開發用的 API Key 不外洩，當你在 Google Apps Script 後台進行功能測試（例如執行 `TestRunner.js`）時，系統會要求讀取 `TEST_API_KEY`。
+
+**設定步驟：**
+1. 打開 Backend GAS 專案的線上編輯器。
+2. 點擊左側齒輪圖示進入 **專案設定 (Project Settings)**。
+3. 捲動到底部的 **指令碼屬性 (Script Properties)**，點擊「新增指令碼屬性」。
+4. 屬性 (Property) 填入：`TEST_API_KEY`
+5. 值 (Value) 填入：你申請的 Gemini API Key (可至 Google AI Studio 申請)。
+6. 儲存設定。
+
 ## 關鍵資源 (Key Resources)
 
 | 資源 | ID / URL |
 |------|----------|
 | Admin Database Sheet | `1a-Po10_gmaLxfEWwSU31hQjoW0Jqpv_t4U9YM4KZnNw` |
-| Backend GAS Project | `1qSxXY8LbmllJwOPtFyNYIdEdpODm-5e-lF6893RUhWcgPHcSKSgXDPSZ` |
+| Backend GAS Project | `1fLZFUhYszQr8XPEDeoXcTw78f56eVsobICWjNJ1FPuWUaLjQw8bIjx0K` |
 | User UI Sheet | `1rHl80WEJmPpOo2opER0KQi33zqej4SsahopArk-I_1g` |
 | User Side GAS Project | `15wCum8Lk8-y8uZLk5vOSR0SYCW44FFuUqDpV-9TTHHeQHKZepLTB7N_n` |
 
@@ -67,9 +80,9 @@ Data Training Tool/
 | Module | 名稱 | 狀態 |
 |--------|------|------|
 | A | Backend API Router | ✅ 完成 |
-| B | Prompt Orchestration | ✅ 完成 |
+| B | Prompt Orchestration | ✅ 完成 (已資料庫化) |
 | C | AI Client (Gemini) | ✅ 完成 (含 3 層重試 + Fallback) |
-| D | User Sheet UI | 🟡 部分完成 (生成 ✅ / 提交 🔧) |
-| E | Sheet Data Access | ✅ 完成 |
-| F | Scoring & Feedback | 🟡 後端完成，前端提交流程待串接 |
+| D | User Sheet UI | ✅ 完成 (生成 ✅ / 提交 ✅) |
+| E | Sheet Data Access | ✅ 完成 (含 User 自動註冊與 Sheet 追蹤) |
+| F | Scoring & Feedback | ✅ 完成 (端對端全通) |
 | G | Reporting / Export | ⬜ 未開始 |
