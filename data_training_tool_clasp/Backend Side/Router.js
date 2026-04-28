@@ -40,7 +40,7 @@ function doPost(e) {
         
         const { domain, difficulty } = postData;
         const prompts = PromptBuilder.buildGenerationPrompt(domain, difficulty);
-        const aiResult = GeminiClient.callApi(apiKey, prompts.systemInstruction, prompts.userPrompt, false);
+        const aiResult = GeminiClient.callApi(apiKey, prompts.systemInstruction, prompts.userPrompt, false, { user_email: userEmail, action: 'generate-question' });
         
         const questionId = generateId("Q");
         const dbRecord = {
@@ -54,7 +54,8 @@ function doPost(e) {
           instruction: aiResult.instruction,
           sample_data: aiResult.sample_data,
           expected_health_check_answers: aiResult.expected_health_check_answers,
-          question_tab_url: postData.question_tab_url || ''
+          question_tab_url: postData.question_tab_url || '',
+          cleaned_data_template: aiResult.cleaned_data_template || null
         };
         Database.saveQuestion(dbRecord);
         Database.saveAuditLog({ user_email: userEmail, action_type: "generate-question", related_id: questionId, status: "success" });
@@ -86,7 +87,7 @@ function doPost(e) {
           user_health_check_sop, 
           user_cleaned_data
         );
-        const aiScore = GeminiClient.callApi(apiKey, prompts.systemInstruction, prompts.userPrompt, false);
+        const aiScore = GeminiClient.callApi(apiKey, prompts.systemInstruction, prompts.userPrompt, false, { user_email: userEmail, action: 'evaluate-response' });
         
         const scoreId = generateId("S");
         Database.saveScore({
@@ -103,7 +104,43 @@ function doPost(e) {
           feedback_comment: aiScore.feedback_comment
         });
         Database.saveAuditLog({ user_email: userEmail, action_type: "submit-response", related_id: responseId, status: "success" });
-        
+
+        // Attach standard_answers from question record if evaluation prompt didn't return it
+        if (!aiScore.standard_answers) {
+          const rawAnswers = questionRecord.expected_health_check_answers;
+          if (rawAnswers) {
+            try {
+              const parsed = JSON.parse(rawAnswers);
+              if (Array.isArray(parsed)) {
+                aiScore.standard_answers = parsed.map(function(item, i) {
+                  return (i + 1) + '. ' + (typeof item === 'object' ? JSON.stringify(item, null, 2) : String(item));
+                }).join('\n');
+              } else if (typeof parsed === 'object') {
+                aiScore.standard_answers = JSON.stringify(parsed, null, 2);
+              } else {
+                aiScore.standard_answers = String(parsed);
+              }
+            } catch(e) {
+              aiScore.standard_answers = String(rawAnswers);
+            }
+          }
+        }
+
+        // Attach cleaned_data_template stored at question-generation time
+        if (!aiScore.cleaned_data_template) {
+          const rawTemplate = questionRecord.cleaned_data_template;
+          if (rawTemplate && rawTemplate !== 'null') {
+            try {
+              const parsed = JSON.parse(rawTemplate);
+              aiScore.cleaned_data_template = Array.isArray(parsed) || typeof parsed === 'object'
+                ? JSON.stringify(parsed, null, 2)
+                : String(parsed);
+            } catch(e) {
+              aiScore.cleaned_data_template = String(rawTemplate);
+            }
+          }
+        }
+
         responseData = { status: "success", score: aiScore };
         break;
       }

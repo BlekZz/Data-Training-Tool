@@ -9,6 +9,30 @@
 const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyok8J_IT4GGtaIPG9XEcBpI_WOCeF5AN9-w-idnp5HHYZojXc1goee14zRi1AZSpXhag/exec";
 
 /**
+ * Inserts newlines before numbered list items and emoji bullets so AI output
+ * renders as proper line-broken text in Google Sheets cells (wrap must be on).
+ */
+function formatDisplayText(text) {
+  if (!text) return text;
+  text = String(text);
+
+  // Newline before numbered items mid-text: "...text 1. item" → "...text\n1. item"
+  text = text.replace(/([^\n]) +(\d+[\.、]\s)/g, '$1\n$2');
+
+  // Newline before BMP emoji bullets (U+2600–U+27BF)
+  text = text.replace(/([^\n]) +([☀-➿])/g, '$1\n$2');
+  // Supplemental emoji via surrogate pairs (covers most of U+1F300–U+1FBFF)
+  text = text.replace(/([^\n]) +(\uD83C[\uDF00-\uDFFF])/g, '$1\n$2');
+  text = text.replace(/([^\n]) +(\uD83D[\uDC00-\uDFFF])/g, '$1\n$2');
+  text = text.replace(/([^\n]) +(\uD83E[\uDD00-\uDFFF])/g, '$1\n$2');
+
+  // Collapse 3+ newlines to max 2
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  return text.trim();
+}
+
+/**
  * 當 Google Sheet 開啟時自動執行
  */
 function onOpen() {
@@ -35,7 +59,8 @@ function setupHomePage() {
   sheet.getRange('A1:C1').setValues([['數據判斷訓練平台', '', '']])
        .setBackground('#4A90D9').setFontColor('#FFFFFF').setFontWeight('bold');
   
-  sheet.getRange('A3:B3').setValues([['User Email', Session.getActiveUser().getEmail()]]);
+  const detectedEmail = Session.getActiveUser().getEmail();
+  sheet.getRange('A3:B3').setValues([['User Email', detectedEmail || '← 請在此填入你的 Google 帳號 Email']]);
   sheet.getRange('A4:B4').setValues([['Gemini API Key', '在此貼上你的 API Key']]);
   sheet.getRange('A5:B5').setValues([['產業領域', '電商與零售 (E-commerce / Retail)']]);
   sheet.getRange('A6:B6').setValues([['難度等級', 'Level 1']]);
@@ -104,10 +129,18 @@ function runGenerationLogic() {
   const home = ss.getSheetByName('Home');
   if (!home) throw new Error("找不到 Home 頁面");
   
-  const apiKey = home.getRange('B4').getValue();
+  const apiKey = String(home.getRange('B4').getValue()).trim();
   const domain = home.getRange('B5').getValue();
   const difficulty = home.getRange('B6').getValue();
-  const userEmail = home.getRange('B3').getValue();
+  const userEmail = String(home.getRange('B3').getValue()).trim();
+
+  // Pre-flight validation — fail fast before hitting the backend
+  if (!userEmail || userEmail.startsWith('←')) {
+    throw new Error("請在 Home 頁面 B3 儲存格填入你的 Google 帳號 Email，再重新生成。");
+  }
+  if (!apiKey || apiKey === '在此貼上你的 API Key' || apiKey === '') {
+    throw new Error("請在 Home 頁面 B4 儲存格貼上你的 Gemini API Key，再重新生成。");
+  }
 
   const payload = {
     action: "generate-question",
@@ -152,7 +185,7 @@ function renderQuestionTab(questionId, data) {
     .setFontWeight('bold').setFontSize(13);
 
   // === 區塊 2: 任務情境 ===
-  const ctx = data.business_context || data.business_Context || '（無情境）';
+  const ctx = formatDisplayText(data.business_context || data.business_Context || '（無情境）');
   sheet.getRange('A2:H5').merge()
     .setValue('【任務情境】\n' + ctx)
     .setBackground('#EBF3FB').setWrap(true).setVerticalAlignment('top');
@@ -323,7 +356,7 @@ function renderFeedback(sheet, score) {
 
   // 評語
   sheet.getRange(startRow + 4, 1, 1, 6).merge()
-    .setValue(score.feedback_comment)
+    .setValue(formatDisplayText(score.feedback_comment))
     .setWrap(true)
     .setBackground('#F3F4FF')
     .setVerticalAlignment('top');
@@ -335,15 +368,15 @@ function renderFeedback(sheet, score) {
     .setValue('✅ 標準健檢解答')
     .setBackground('#4A4A8A').setFontColor('#FFFFFF').setFontWeight('bold');
   sheet.getRange(stdStart + 1, 1, 1, 6).merge()
-    .setValue(score.standard_answers || '（無提供資料）')
+    .setValue(formatDisplayText(score.standard_answers) || '（無提供資料）')
     .setWrap(true).setBackground('#F8F9FA').setVerticalAlignment('top');
-  sheet.setRowHeight(stdStart + 1, 100);
+  sheet.setRowHeight(stdStart + 1, 120);
 
   sheet.getRange(stdStart + 3, 1, 1, 6).merge()
     .setValue('📄 清洗數據範本')
     .setBackground('#4A4A8A').setFontColor('#FFFFFF').setFontWeight('bold');
   sheet.getRange(stdStart + 4, 1, 1, 6).merge()
-    .setValue(score.cleaned_data_template || '（無提供資料）')
+    .setValue(formatDisplayText(score.cleaned_data_template) || '（無提供資料）')
     .setWrap(true).setBackground('#F8F9FA').setVerticalAlignment('top');
   sheet.setRowHeight(stdStart + 4, 100);
 
@@ -531,7 +564,7 @@ function handleSubmitSuccess(result) {
         const difficulty = home.getRange('B6').getValue();
         const date = new Date().toLocaleString();
         const totalScore = result.score.overall_score + ' / 20';
-        const feedback = result.score.feedback_comment;
+        const feedback = formatDisplayText(result.score.feedback_comment);
 
         const historyStartRow = 10;
         // 檢查是否已有標題

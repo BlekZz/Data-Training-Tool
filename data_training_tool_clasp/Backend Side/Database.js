@@ -13,7 +13,7 @@ const Database = {
     const sheet = this.getSheet('Questions');
     if (!sheet) throw new Error("找不到 Questions 工作表");
     
-    // 欄位對應: question_id, user_email, difficulty, domain, prompt_version, question_title, business_context, question_instruction, sample_data_snapshot, expected_health_check_answers, question_tab_url, created_at
+    // 欄位對應: question_id, user_email, difficulty, domain, prompt_version, question_title, business_context, question_instruction, sample_data_snapshot, expected_health_check_answers, question_tab_url, created_at, cleaned_data_template
     const row = [
       questionData.question_id,
       questionData.user_email,
@@ -26,7 +26,8 @@ const Database = {
       JSON.stringify(questionData.sample_data),
       JSON.stringify(questionData.expected_health_check_answers),
       questionData.question_tab_url || '',
-      new Date().toISOString()
+      new Date().toISOString(),
+      JSON.stringify(questionData.cleaned_data_template || null)
     ];
     sheet.appendRow(row);
   },
@@ -106,24 +107,31 @@ const Database = {
    * 3. 否則拋出錯誤拒絕存取
    */
   validateUserAccess: function(postData) {
-    const userEmail = postData.userEmail || "anonymous@example.com";
+    // Normalize: trim whitespace and lowercase to prevent silent mismatch
+    const rawEmail = postData.userEmail || "";
+    const userEmail = rawEmail.trim().toLowerCase() || "anonymous@example.com";
     const sheetId = postData.userSheetId || "";
     const sheetUrl = postData.userSheetUrl || "";
     const userName = userEmail.split('@')[0];
-    
+
+    if (userEmail === "anonymous@example.com") {
+      throw new Error("User Email 未填寫或為空白，請在 Home 頁面 B3 儲存格確認你的 Google 帳號 Email 已正確填入。");
+    }
+
     const sheet = this.getSheet('Users');
     if (!sheet) throw new Error("找不到 Users 工作表，無法進行權限驗證");
-    
+
     const data = sheet.getDataRange().getValues();
     if (data.length === 0) throw new Error("Users 工作表完全空白，缺少欄位");
-    
+
     const headers = data[0];
     const emailIndex = headers.indexOf('user_email');
     if (emailIndex === -1) throw new Error("Users 工作表缺少 user_email 欄位");
-    
-    // 檢查是否已在名單中
+
+    // 檢查是否已在名單中 (normalize stored email too)
     for (let i = 1; i < data.length; i++) {
-      if (data[i][emailIndex] === userEmail) {
+      const storedEmail = String(data[i][emailIndex] || '').trim().toLowerCase();
+      if (storedEmail === userEmail) {
         // 更新現有使用者的 Sheet 資訊
         const idIdx = headers.indexOf('user_sheet_id');
         const urlIdx = headers.indexOf('user_sheet_url');
@@ -132,7 +140,7 @@ const Database = {
         return true;
       }
     }
-    
+
     // 不在名單中，檢查 Domain 是否允許自動註冊
     if (String(userEmail).endsWith('@inboundmarketing.tw')) {
       const newRow = new Array(headers.length).fill('');
@@ -192,10 +200,25 @@ const Database = {
   /**
    * 寫入 AuditLog 紀錄
    */
+  ensureAuditLogSheet: function() {
+    const ss = SpreadsheetApp.openById(CONFIG.DATABASE_SHEET_ID);
+    let sheet = ss.getSheetByName('AuditLog');
+    if (!sheet) {
+      sheet = ss.insertSheet('AuditLog');
+      const headers = ['log_id', 'user_email', 'action_type', 'related_id', 'status', 'error_message', 'timestamp'];
+      sheet.getRange(1, 1, 1, headers.length)
+        .setValues([headers])
+        .setFontWeight('bold')
+        .setBackground('#4A90D9')
+        .setFontColor('#FFFFFF');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  },
+
   saveAuditLog: function(logData) {
     try {
-      const sheet = this.getSheet('AuditLog');
-      if (!sheet) return;
+      const sheet = this.ensureAuditLogSheet();
       const row = [
         generateId("L"),
         logData.user_email || "anonymous",
@@ -207,8 +230,50 @@ const Database = {
       ];
       sheet.appendRow(row);
     } catch (e) {
-      // AuditLog 失敗不應影響主流程
       console.warn("AuditLog write failed:", e);
+    }
+  },
+
+  /**
+   * 確保 ApiCallLog 工作表存在，若不存在則自動建立
+   */
+  ensureApiCallLogSheet: function() {
+    const ss = SpreadsheetApp.openById(CONFIG.DATABASE_SHEET_ID);
+    let sheet = ss.getSheetByName('ApiCallLog');
+    if (!sheet) {
+      sheet = ss.insertSheet('ApiCallLog');
+      const headers = ['log_id', 'timestamp', 'user_email', 'action', 'model_name', 'attempt', 'http_status', 'duration_ms', 'success', 'error_detail'];
+      sheet.getRange(1, 1, 1, headers.length)
+        .setValues([headers])
+        .setFontWeight('bold')
+        .setBackground('#E8E8F5');
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  },
+
+  /**
+   * 寫入每一次 Gemini API 呼叫的詳細記錄（含 retry）
+   * @param {Object} logData - { user_email, action, model_name, attempt, http_status, duration_ms, success, error_detail }
+   */
+  saveApiCallLog: function(logData) {
+    try {
+      const sheet = this.ensureApiCallLogSheet();
+      const row = [
+        generateId("AC"),
+        new Date().toISOString(),
+        logData.user_email || '',
+        logData.action || '',
+        logData.model_name || '',
+        logData.attempt || 1,
+        logData.http_status !== undefined ? logData.http_status : '',
+        logData.duration_ms || '',
+        logData.success ? 'TRUE' : 'FALSE',
+        String(logData.error_detail || '').substring(0, 1000)
+      ];
+      sheet.appendRow(row);
+    } catch (e) {
+      console.warn("ApiCallLog write failed:", e);
     }
   },
 

@@ -7,28 +7,35 @@ const GeminiClient = {
    * @param {string} apiKey - User 提供的 API Key
    * @param {string} systemInstruction - 系統提示詞 (System Prompt)
    * @param {string} userPrompt - 任務提示詞
-   * @param {boolean} useFlash - 是否使用速度較快的 Flash 模型 (預設為 true，因為 JSON 輸出不複雜)
+   * @param {boolean} useFlash - 是否使用速度較快的 Flash 模型
+   * @param {Object} [context] - 供 ApiCallLog 使用的呼叫上下文，例如 { user_email, action }
    * @returns {Object} JSON 解析後的結果
    */
-  callApi: function(apiKey, systemInstruction, userPrompt, useFlash = true) {
+  callApi: function(apiKey, systemInstruction, userPrompt, useFlash = true, context) {
+    context = context || {};
     let attempts = 0;
     const maxAttempts = 3;
     let lastError = null;
-    
+
     // 優先從資料庫讀取模型設定
     const configKey = useFlash ? "GEMINI_FLASH_MODEL" : "GEMINI_PRO_MODEL";
     let modelName = Database.getSystemConfig(configKey, CONFIG.DEFAULT_MODEL);
 
     while (attempts < maxAttempts) {
+      const attemptNum = attempts + 1;
+      const attemptStart = Date.now();
+      let httpStatus = null;
+      let errorDetail = '';
+
       try {
-        // 如果是第二次嘗試，切換到備用模型
+        // 第二次嘗試起切換備用模型
         if (attempts === 1) {
           modelName = CONFIG.FALLBACK_MODEL;
-          console.warn(`第 ${attempts + 1} 次嘗試：切換至備用模型 ${modelName}`);
+          console.warn(`第 ${attemptNum} 次嘗試：切換至備用模型 ${modelName}`);
         }
 
         const url = `${CONFIG.API_BASE_URL}${modelName}:generateContent?key=${apiKey}`;
-        
+
         const payload = {
           "system_instruction": { "parts": [{ "text": systemInstruction }] },
           "contents": [{ "parts": [{ "text": userPrompt }] }],
@@ -46,42 +53,69 @@ const GeminiClient = {
         };
 
         const response = UrlFetchApp.fetch(url, options);
-        const responseCode = response.getResponseCode();
+        httpStatus = response.getResponseCode();
         const responseBody = response.getContentText();
-        
-        if (responseCode !== 200) {
-          throw new Error(`API Error ${responseCode}: ${responseBody}`);
+
+        if (httpStatus !== 200) {
+          errorDetail = responseBody.substring(0, 800);
+          throw new Error(`API Error ${httpStatus}: ${responseBody}`);
         }
-        
+
         const jsonResponse = JSON.parse(responseBody);
         if (!jsonResponse.candidates || jsonResponse.candidates.length === 0) {
+          errorDetail = "No candidates in response: " + responseBody.substring(0, 400);
           throw new Error("No candidates returned.");
         }
 
         let textContent = jsonResponse.candidates[0].content.parts[0].text;
-        
-        // --- 預處理 ---
+
+        // --- 預處理：清除 markdown fence、轉換全形符號 ---
         textContent = textContent.replace(/```json/g, "").replace(/```/g, "").trim();
-        textContent = textContent.replace(/[\uff01-\uff5e]/g, function(ch) {
+        textContent = textContent.replace(/[！-～]/g, function(ch) {
           return String.fromCharCode(ch.charCodeAt(0) - 0xfee0);
-        }).replace(/\u3000/g, " ");
-        
-        return JSON.parse(textContent); 
+        }).replace(/　/g, " ");
+
+        const result = JSON.parse(textContent);
+
+        Database.saveApiCallLog({
+          user_email: context.user_email || '',
+          action: context.action || '',
+          model_name: modelName,
+          attempt: attemptNum,
+          http_status: httpStatus,
+          duration_ms: Date.now() - attemptStart,
+          success: true,
+          error_detail: ''
+        });
+
+        return result;
 
       } catch (error) {
-        attempts++;
         lastError = error;
-        console.error(`第 ${attempts} 次嘗試失敗:`, error.toString());
-        
+
+        Database.saveApiCallLog({
+          user_email: context.user_email || '',
+          action: context.action || '',
+          model_name: modelName,
+          attempt: attemptNum,
+          http_status: httpStatus !== null ? httpStatus : '',
+          duration_ms: Date.now() - attemptStart,
+          success: false,
+          error_detail: errorDetail || error.toString().substring(0, 800)
+        });
+
+        attempts++;
+        console.error(`第 ${attemptNum} 次嘗試失敗:`, error.toString());
+
         if (attempts < maxAttempts) {
           // 等待時間隨次數增加 (1.5s, 3s)
-          Utilities.sleep(attempts * 1500); 
+          Utilities.sleep(attempts * 1500);
         }
       }
     }
-    
-    // 如果走到這，代表三次都失敗
-    throw new Error(`AI 導師目前太忙碌 (已嘗試 3 次)，請稍後再試。最後一次錯誤: ${lastError.message}`);
+
+    // 三次全部失敗
+    throw new Error(`AI 呼叫失敗 (已嘗試 ${maxAttempts} 次)，請稍後再試。最後錯誤: ${lastError.message}`);
   },
 
   /**
