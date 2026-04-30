@@ -1,14 +1,15 @@
 # Prompt Spec
 
-> **最後更新**: 2026-04-25
-> **狀態**: 已與實作對齊 (PromptBuilder.js v1.0)
+> **最後更新**: 2026-04-30
+> **狀態**: 已與實作對齊 (PromptBuilder.js / DatabaseSetup.js — v1.2)
 
 ---
 
 ## 1. Generation Prompt
 
-**用途**: 根據產業領域與難度等級，生成帶有商業情境的微型高密度異常數據樣本。
+**用途**: 根據產業領域與難度等級，生成帶有商業情境的微型高密度異常數據樣本，以及對應的完整正確資料 (`cleaned_data_template`)。
 **實作位置**: `PromptBuilder.buildGenerationPrompt(domain, difficulty)`
+**目前版本**: `gen_v1.1`
 
 ### Inputs
 *   `domain` — 產業領域 (電商/金融/醫療/行銷)
@@ -27,6 +28,7 @@
     *   30% 基礎格式錯誤 (空白、型別錯置、全半角混用)
     *   40% 商業邏輯地雷 (必須與 business_context 中的條件產生矛盾)
 3.  **難度調整**：根據 `difficulty` 調整條件的隱蔽性。
+4.  **cleaned_data_template 必須與 sample_data 筆數一致**，完整輸出所有清洗後的正確資料。
 
 ### Output Format (Strict JSON)
 ```json
@@ -36,9 +38,16 @@
   "instruction": "給實習生的操作指示",
   "sample_data": [{ ... }, { ... }],
   "expected_health_check_answers": ["預期錯誤 1", "預期錯誤 2"],
+  "cleaned_data_template": [{ ... }, { ... }],
   "internal_notes": "出題邏輯說明"
 }
 ```
+
+### cleaned_data_template 規則
+- 格式與 `sample_data` 完全相同 (相同欄位結構)
+- 內容是 `sample_data` 的「完整正確版本」：所有格式錯誤已修正、商業邏輯地雷已還原、遺失值已填補
+- 這是學員提交後對照用的標準答案資料集，務必完整輸出每一筆
+- 於出題時一次性生成，儲存在 `Questions` 表的第 13 欄，評分時不再重新生成
 
 ### Gemini API 設定
 *   `temperature`: 0.2 (低溫度，確保 JSON 格式穩定)
@@ -51,6 +60,7 @@
 
 **用途**: 評估使用者提交的健檢 SOP 與清洗後資料。
 **實作位置**: `PromptBuilder.buildEvaluationPrompt(questionContext, expectedAnswers, userSop, userCleanedData)`
+**目前版本**: `eval_v1.1`
 
 ### Inputs
 *   `questionContext` — 原始題目的 business_context
@@ -68,8 +78,8 @@
 | 清洗完整度 | `completeness_score` | 最終數據的可用性 |
 
 ### Feedback Format (AI 盲區雷達診斷)
-*   **字數限制**: 150 字以內
-*   **格式**: 使用 🟢 🟡 🔴 標示各維度表現
+*   **格式**: 使用要點式 (Bullet points) 撰寫，字數精簡
+*   **標示**: 使用 🟢 🟡 🔴 標示各維度好壞
 *   **範例**:
     ```
     🟢 基礎格式敏感度 (4/5)：有抓出日期與全半角問題。
@@ -85,16 +95,23 @@
   "strategy_score": 4,
   "completeness_score": 4,
   "overall_score": 15,
-  "feedback_comment": "🟢 基礎格式敏感度 (4/5)：..."
+  "feedback_comment": "🟢 基礎格式敏感度 (4/5)：...",
+  "standard_answers": "完整的標準健檢 SOP 解答 (要點式列出所有該發現的地雷與正確處置)"
 }
 ```
+
+> **必須包含的 7 個 Key**: `format_score`, `business_logic_score`, `strategy_score`, `completeness_score`, `overall_score`, `feedback_comment`, `standard_answers`
+
+### Fallback 邏輯 (Router.js)
+- 若 Gemini 回傳未含 `standard_answers` → 從 `Questions.expected_health_check_answers` 讀取並格式化為帶編號的文字
+- 若 Gemini 回傳未含 `cleaned_data_template` → 從 `Questions.cleaned_data_template` 讀取
 
 ---
 
 ## 3. Domain (產業類型) 定義
 
 | Domain | 常見雷區 | 訓練重點 |
-|--------|---------|---------|
+|--------|---------|---------| 
 | **電商與零售** | 退貨金額 > 購買金額、時間序顛倒、折扣碼疊加後變負數、庫存為負、狀態矛盾 | 時間序列邏輯、金額核算 |
 | **金融與支付** | 身分證校驗碼錯誤、未成年開戶、單筆交易極值、幣別匯率錯誤、凍結帳戶有新交易 | 嚴格格式校驗、極值敏感度 |
 | **醫療與健康照護** | 生理數據不合理、診斷時間 < 入院時間、性別與診斷矛盾、年齡與疾病不符 | 跨欄位 Domain Knowledge |
@@ -127,7 +144,14 @@ textContent.replace(/```json/g, "").replace(/```/g, "").trim();
 ```
 
 ### 5.3 三層重試機制
-1.  第一次：使用偏好模型
-2.  第二次：自動切換至 Fallback 模型，等待 1.5s
-3.  第三次：再次嘗試，等待 3s
-4.  三次失敗後回傳清晰錯誤訊息
+1.  第一次：使用偏好模型 (`gemini-2.0-flash`)
+2.  第二次：自動切換至 Fallback 模型 (`gemini-2.5-flash`)，等待 1.5s
+3.  第三次：繼續使用 Fallback 模型，等待 3s
+4.  每次嘗試（不論成敗）都寫入 `ApiCallLog`
+5.  三次失敗後回傳清晰錯誤訊息
+
+### 5.4 文字格式化 (v1.1)
+`formatDisplayText()` 在寫入 Google Sheet 儲存格前處理 AI 回傳文字：
+- 在編號項目 (`1. `, `2. `) 前插入換行符
+- 在 emoji 標記 (🟢, 🟡, 🔴 等) 前插入換行符
+- 摺疊連續 3+ 個換行為最多 2 個

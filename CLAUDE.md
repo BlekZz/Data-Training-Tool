@@ -19,9 +19,12 @@ This project uses **Clasp** (Google Apps Script CLI). There is no `package.json`
 cd "data_training_tool_clasp/Backend Side"
 npx clasp push --force
 
-# Push User-side changes
+# Push User-side changes (single user)
 cd "data_training_tool_clasp/User Side"
 npx clasp push --force
+
+# Push User-side changes to ALL managed users (global push)
+pwsh scripts/push_all.ps1
 
 # Authenticate (first-time or token expired)
 npx clasp login
@@ -29,9 +32,9 @@ npx clasp login
 
 **Deployment Rule (from .cursorrules):** Whenever `.js` or `.html` files in `data_training_tool_clasp/` are modified, automatically run `npx clasp push --force` in the corresponding subdirectory — do not ask the user to do it manually. Notify after push.
 
-**Critical:** `clasp push` only updates the GAS script editor. The live `/exec` Web App endpoint will NOT pick up changes until the user creates a new deployment version: GAS editor → Deploy → Manage deployments → Edit → New version → Deploy. Always remind the user to redeploy after a backend push.
+**Critical:** `clasp push` only updates the GAS script editor. The live `/exec` Web App endpoint will NOT pick up changes until the user creates a new deployment version: GAS editor → Deploy → Manage deployments → Edit → New version → Deploy. Always remind the user to redeploy after a backend push. User Side changes do NOT require this redeploy step.
 
-There is no test runner or linter. Manual testing is done via the live Google Sheet UI.
+There is no test runner or linter. Manual testing is done via the live Google Sheet UI. Backend diagnostic functions exist in `TestRunner.js` (run directly in the GAS script editor).
 
 ---
 
@@ -40,8 +43,9 @@ There is no test runner or linter. Manual testing is done via the live Google Sh
 **Pattern:** Thin distributed client → single centralized GAS backend → single central Google Sheet database.
 
 ```
-User Google Sheet (copy per user)
+User Google Sheet (copy per user, container-bound GAS)
     └── UserClient.js (UI, form logic, HTTP calls)
+    └── LoadingDialog.html / SubmitLoadingDialog.html (modal UX)
             │  HTTP POST
             ▼
 Central GAS Web App (one shared backend)
@@ -59,13 +63,26 @@ Google Gemini API (v1beta, primary: gemini-2.0-flash, fallback: gemini-2.5-flash
 
 | File | Role |
 |------|------|
-| `Backend Side/Router.js` | `doPost()` dispatcher — handles `generate-question` and `submit-response` actions |
+| `Backend Side/Router.js` | `doGet()` health-check + `doPost()` dispatcher — handles `register-key`, `generate-question`, and `submit-response` actions |
 | `Backend Side/Config.js` | Database sheet ID, model names (`DEFAULT_MODEL`, `FALLBACK_MODEL`), API base URL |
-| `Backend Side/GeminiClient.js` | Gemini REST wrapper — 3-tier retry, model fallback, per-attempt `ApiCallLog` writes |
+| `Backend Side/GeminiClient.js` | Gemini REST wrapper — 3-tier retry (1st default model, 2nd+ fallback model), per-attempt `ApiCallLog` writes, full-width → half-width char normalization |
 | `Backend Side/Database.js` | All Sheet CRUD — user validation, row append, lookup by column, auto-creates `AuditLog` and `ApiCallLog` if missing |
 | `Backend Side/DatabaseSetup.js` | One-time setup + schema migration scripts |
-| `Backend Side/PromptBuilder.js` | Reads active prompt from `PromptVersions` tab, injects domain/difficulty |
-| `User Side/UserClient.js` | Full client logic — generates question tabs, renders SOP form, submits responses, renders feedback. Contains `formatDisplayText()` helper |
+| `Backend Side/PromptBuilder.js` | Reads active prompt from `PromptVersions` tab, injects domain/difficulty via template replacement |
+| `Backend Side/TestRunner.js` | GAS-editor-only test/diagnostic functions: Gemini connection, E2E generation, DB write, model listing |
+| `User Side/UserClient.js` | Full client logic — generates question tabs, renders SOP form, submits responses, renders feedback. Contains `formatDisplayText()`, `findRowByText()`, `renderFeedback()`. Declares `CLIENT_VERSION` |
+| `User Side/LoadingDialog.html` | Modal dialog for question generation — shows loading animation, success instructions, or error state |
+| `User Side/SubmitLoadingDialog.html` | Modal dialog for response submission — shows loading animation, score preview on success, or error state |
+| `User Side/test.js` | `debug_Network()` — diagnostic function for testing Backend URL connectivity |
+
+### Multi-User Push Infrastructure (v1.2)
+
+| File | Role |
+|------|------|
+| `scripts/managed_users.json` | Registry of all managed User Side GAS script IDs for global push |
+| `scripts/push_all.ps1` | PowerShell script — iterates `managed_users.json`, swaps `.clasp.json` scriptId per user, pushes, then restores original |
+| `.claude/commands/push-users.md` | Claude Code slash command — non-interactive version of `push_all.ps1` (avoids `Read-Host` hang) |
+| `.claude/commands/add-user.md` | Claude Code slash command — adds a new entry to `managed_users.json` |
 
 ### Critical Design Decisions
 
@@ -75,41 +92,54 @@ Google Gemini API (v1beta, primary: gemini-2.0-flash, fallback: gemini-2.5-flash
 - **Email normalization:** `validateUserAccess()` normalizes all emails with `.trim().toLowerCase()` before comparison to prevent silent mismatch.
 - **AuditLog & ApiCallLog auto-creation:** Both `saveAuditLog()` and `saveApiCallLog()` call `ensure*Sheet()` functions that create the tab if it doesn't exist, so logging never silently fails due to a missing sheet.
 - **`cleaned_data_template` at generation time:** The cleaned/correct version of `sample_data` is generated by Gemini when the question is created and stored in the `Questions` tab. At submit time it is retrieved from the question record — not re-generated during evaluation.
+- **Z-Column Hidden Anchors:** Question tabs store metadata in column Z (Z1=question_id, Z2–Z5=row coordinates for SOP/clean data sections) using white font color, avoiding brittle text-search-based positioning.
+- **Server-Side Master:** Both generation and submission flows use a server-side orchestration pattern (`performFullGeneration()` / `performFullSubmit()`) — the modal dialog triggers the server function, which handles the entire fetch→DB→render pipeline. This avoids large-payload transfer issues between HTML dialog and GAS runtime.
+- **Client-Side Dialog UX (v1.2):** All user feedback (success, error, whitelist rejection) is handled inside the modal dialog HTML. Server-side `ui.alert()` calls were removed because they conflict with open modals, causing silent failures.
 
 ### Database Tabs
 
 | Tab | Key columns |
 |-----|-------------|
-| `Questions` | `question_id`, `sample_data_snapshot`, `expected_health_check_answers`, `cleaned_data_template` (col 13) |
+| `Users` | `user_id`, `user_email`, `user_name`, `user_sheet_id`, `user_sheet_url`, `status`, `created_at` |
+| `Questions` | `question_id`, `user_email`, `difficulty`, `domain`, `sample_data_snapshot`, `expected_health_check_answers`, `cleaned_data_template` (col 13) |
+| `Responses` | `response_id`, `question_id`, `user_email`, `user_health_check_sop`, `user_cleaned_data`, `submitted_at` |
+| `Scores` | `score_id`, `question_id`, `response_id`, `user_email`, `overall_score`, `format_score`, `business_logic_score`, `strategy_score`, `completeness_score`, `feedback_comment` |
+| `PromptVersions` | `prompt_version`, `type`, `system_instruction`, `user_prompt_template`, `is_active` |
+| `SystemConfig` | `config_key`, `config_value`, `description` |
 | `AuditLog` | `log_id`, `user_email`, `action_type`, `related_id`, `status`, `error_message`, `timestamp` |
-| `ApiCallLog` | `log_id`, `user_email`, `action`, `model_name`, `attempt`, `http_status`, `duration_ms`, `success`, `error_detail` |
+| `ApiCallLog` | `log_id`, `timestamp`, `user_email`, `action`, `model_name`, `attempt`, `http_status`, `duration_ms`, `success`, `error_detail` |
 
 ### Two Core Flows
 
 **Generate Question** (`generate-question`):
-1. `UserClient.js` validates non-empty email + API key locally, then POSTs to backend
-2. Backend normalizes email, validates user whitelist, reads active generation prompt
-3. Calls Gemini — response includes `title`, `business_context`, `sample_data`, `expected_health_check_answers`, `cleaned_data_template`
-4. Saves full question record (all fields including `cleaned_data_template`) to `Questions` tab
-5. Logs to `AuditLog`; each Gemini attempt logged to `ApiCallLog`
-6. Returns question JSON → renders new tab with SOP form (yellow) + cleaned data section (green)
+1. `UserClient.js` validates non-empty email + API key locally, then opens `LoadingDialog.html`
+2. Dialog calls `performFullGeneration()` → `runGenerationLogic()` POSTs to backend
+3. Backend normalizes email, validates user whitelist, reads active generation prompt
+4. Calls Gemini — response includes `title`, `business_context`, `sample_data`, `expected_health_check_answers`, `cleaned_data_template`
+5. Saves full question record (all fields including `cleaned_data_template`) to `Questions` tab
+6. Logs to `AuditLog`; each Gemini attempt logged to `ApiCallLog`
+7. `renderQuestionTab()` creates new tab with SOP form (yellow) + cleaned data section (green) + Z-column anchors
+8. Dialog shows success state with instructions, or error state with message
 
 **Submit Response** (`submit-response`):
-1. `UserClient.js` collects SOP rows + cleaned data, POSTs with `question_id`
-2. Backend retrieves question record from `Questions` tab
-3. Calls Gemini with evaluation prompt → returns scores + `feedback_comment` + `standard_answers`
-4. If `standard_answers` missing from Gemini response → falls back to `questionRecord.expected_health_check_answers`
-5. If `cleaned_data_template` missing from Gemini response → falls back to `questionRecord.cleaned_data_template`
-6. Saves to `Responses` + `Scores` tabs; returns enriched score to client
-7. `renderFeedback()` applies `formatDisplayText()` before writing to cells (inserts `\n` before numbered items and emoji bullets)
+1. `UserClient.js` validates user is on a Q_ tab, collects SOP rows + cleaned data using `findRowByText()` for dynamic positioning
+2. Confirmation dialog → opens `SubmitLoadingDialog.html` with payload injected via `<script>` tag
+3. Dialog calls `performFullSubmit(payload)` → `runSubmitLogic()` POSTs to backend
+4. Backend retrieves question record from `Questions` tab
+5. Calls Gemini with evaluation prompt → returns scores + `feedback_comment` + `standard_answers`
+6. If `standard_answers` missing from Gemini response → falls back to `questionRecord.expected_health_check_answers`
+7. If `cleaned_data_template` missing from Gemini response → falls back to `questionRecord.cleaned_data_template`
+8. Saves to `Responses` + `Scores` tabs; returns enriched score to client
+9. `handleSubmitSuccess()` calls `renderFeedback()` which applies `formatDisplayText()` before writing to cells, and writes history to Home tab
+10. Dialog shows score preview on success, or error state with message
 
 ### Schema Migration Scripts (`DatabaseSetup.js`)
 
 Run once in GAS editor when upgrading an existing installation:
 
 | Function | What it does |
-|----------|--------------|
-| `setupDatabaseHeaders()` | Creates all tabs + default prompts (fresh install only) |
+|----------|--------------| 
+| `setupDatabaseHeaders()` | Creates all tabs + default prompts + SystemConfig defaults (fresh install only) |
 | `migrateQuestionsAddCleanedData()` | Appends `cleaned_data_template` column to existing Questions sheet |
 | `migrateGenerationPrompt()` | Patches active generation prompt to include `cleaned_data_template` in JSON output |
 
@@ -124,17 +154,18 @@ Common failure patterns:
 - `http_status: 429` → Gemini rate limit or quota exceeded
 - `Bandwidth quota exceeded` in error → GAS `UrlFetchApp` daily bandwidth limit hit (resets at midnight PT); also triggered when using an invalid model name that returns large HTML error responses
 - Empty `user_email` in AuditLog → user's Home B3 cell was blank at submission time
+- Silent dialog failure (pre-v1.2) → server-side `ui.alert()` conflicted with open modal; fixed in v1.2
 
 ---
 
 ## Key Resource IDs
 
 | Resource | ID |
-|----------|----|
+|----------|---|
 | Central Database Sheet | `1a-Po10_gmaLxfEWwSU31hQjoW0Jqpv_t4U9YM4KZnNw` |
 | Backend GAS Script | `1fLZFUhYszQr8XPEDeoXcTw78f56eVsobICWjNJ1FPuWUaLjQw8bIjx0K` |
 | User Sheet Template | `1rHl80WEJmPpOo2opER0KQi33zqej4SsahopArk-I_1g` |
-| User-side GAS Script | `15wCum8Lk8-y8uZLk5vOSR0SYCW44FFuUqDpV-9TTHHeQHKZepLTB7N_n` |
+| User-side GAS Script (Template) | `15wCum8Lk8-y8uZLk5vOSR0SYCW44FFuUqDpV-9TTHHeQHKZepLTB7N_n` |
 
 ---
 
@@ -148,5 +179,7 @@ Common failure patterns:
 
 ## Current Development Status
 
-- **Modules A–F**: Complete
+- **v1.0 (MVP)**: Modules A–F complete — full generation → submission → scoring pipeline
+- **v1.1**: Multi-user fix, ApiCallLog, cleaned_data_template at generation, text formatting
+- **v1.2**: Reliable dialog UX (all feedback client-side), CLIENT_VERSION tracking, multi-user push infrastructure (`push_all.ps1`, `managed_users.json`, Claude Code slash commands)
 - **Module G** (trainer reporting dashboard / data export): Not started

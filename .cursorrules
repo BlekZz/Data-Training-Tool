@@ -5,10 +5,24 @@ When working on Google Apps Script (`.js` or `.html` files in the `data_training
 1. **Auto-Push on Change**: Whenever code is modified or debugged, the agent MUST automatically run `npx clasp push --force` in the corresponding directory (`User Side` or `Backend Side`).
 2. **Do Not Ask for Deployment**: The agent should directly execute the push command instead of asking the user to manually deploy or run `clasp push` themselves, unless it's a destructive change that requires manual permission (like deleting a remote file) or requires an initial setup.
 3. **Notify User**: After successfully pushing, the agent should briefly notify the user that the code has been updated to the Apps Script project.
-4. **Remind Redeploy**: After pushing **Backend Side** changes, always remind the user that the `/exec` Web App endpoint requires a manual redeploy in the GAS editor: Deploy → Manage deployments → Edit → New version → Deploy. User Side changes do not require this step.
+4. **Remind Redeploy**: After pushing **Backend Side** changes, always remind the user that the `/exec` Web App endpoint requires a manual redeploy in the GAS editor: Deploy → Manage deployments → Edit → New version → Deploy. User Side changes do **not** require this step (container-bound scripts take effect immediately).
+
+## Multi-User Push Skill
+When **User Side** code changes are finalized:
+1. Ask the user if they want to push to all managed users (global push).
+2. If yes, run the push logic from `.claude/commands/push-users.md` — do NOT run `scripts/push_all.ps1` directly (it uses `Read-Host` which hangs in non-interactive mode).
+3. After push, report success/failure counts per target.
+4. To add a new user to the managed list, follow `.claude/commands/add-user.md`.
 
 ## Schema Migration Skill
 When making changes to the database schema (adding/removing columns, changing table structure):
 1. Add or update the corresponding migration function in `DatabaseSetup.js`.
 2. Remind the user to run the migration function once in the GAS backend editor after deploying.
 3. Ensure `saveQuestion()`, `saveResponse()`, and `saveScore()` row arrays stay in sync with the schema defined in `setupDatabaseHeaders()`.
+
+## Dialog UX Conventions
+When modifying or creating modal dialogs (`LoadingDialog.html`, `SubmitLoadingDialog.html`):
+1. All user feedback (success, error, whitelist rejection) MUST be handled client-side inside the dialog HTML.
+2. Do NOT use server-side `SpreadsheetApp.getUi().alert()` while a modal dialog is open — it causes silent failures.
+3. Dialogs should have three visual states: loading (spinner + progress), success (icon + instructions/score), error (icon + message).
+4. Use `google.script.run` with both `.withSuccessHandler()` and `.withFailureHandler()` to ensure all code paths are covered.
