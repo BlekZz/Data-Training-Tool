@@ -26,3 +26,8 @@ When modifying or creating modal dialogs (`LoadingDialog.html`, `SubmitLoadingDi
 2. Do NOT use server-side `SpreadsheetApp.getUi().alert()` while a modal dialog is open — it causes silent failures.
 3. Dialogs should have three visual states: loading (spinner + progress), success (icon + instructions/score), error (icon + message).
 4. Use `google.script.run` with both `.withSuccessHandler()` and `.withFailureHandler()` to ensure all code paths are covered.
+
+## Data & Formatting Conventions
+1. **Timezones:** When writing timestamps to Google Sheets via GAS, ALWAYS use `Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss")`. Never use `.toISOString()` as it writes UTC time which conflicts with Sheet's timezone settings.
+2. **Text Formatting Regex:** When processing text for Google Sheet cells, use `*` instead of `+` for spacing checks (e.g., `/([^\n]) *(\d+[\.、]\s)/g` instead of `+`). Chinese punctuation often lacks spaces before list items or emojis. Use double newlines `\n\n` for lists.
+3. **UI Positioning Anchors:** Do NOT use hardcoded row indices or `getLastRow()` to position content dynamically generated below user-editable areas. Instead, write hidden text markers (e.g. `__CLEAN_END__`) to a hidden column (Z) and search for them (`allZ.getValues()`). This makes positioning immune to users inserting/deleting rows.

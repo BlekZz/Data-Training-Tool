@@ -8,7 +8,7 @@ const CLIENT_VERSION = "1.1.0";
 // ============================================================
 // 1. 設定區：請修改下方的 Web App URL
 // ============================================================
-const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyok8J_IT4GGtaIPG9XEcBpI_WOCeF5AN9-w-idnp5HHYZojXc1goee14zRi1AZSpXhag/exec";
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycby-N_JdZV8Y0EbzuYJuFkJkVkJYIMgqANlg392AeRxVk1gOcpi9y2ZAnofdkINKM649uw/exec";
 
 /**
  * Inserts newlines before numbered list items and emoji bullets so AI output
@@ -18,15 +18,15 @@ function formatDisplayText(text) {
   if (!text) return text;
   text = String(text);
 
-  // Newline before numbered items mid-text: "...text 1. item" → "...text\n1. item"
-  text = text.replace(/([^\n]) +(\d+[\.、]\s)/g, '$1\n$2');
+  // Newline before numbered items mid-text (zero-or-more spaces before digit)
+  text = text.replace(/([^\n]) *(\d+[\.、]\s)/g, '$1\n\n$2');
 
-  // Newline before BMP emoji bullets (U+2600–U+27BF)
-  text = text.replace(/([^\n]) +([☀-➿])/g, '$1\n$2');
+  // Newline before BMP emoji bullets (U+2600–U+27BF, zero-or-more spaces)
+  text = text.replace(/([^\n]) *([☀-➿])/g, '$1\n\n$2');
   // Supplemental emoji via surrogate pairs (covers most of U+1F300–U+1FBFF)
-  text = text.replace(/([^\n]) +(\uD83C[\uDF00-\uDFFF])/g, '$1\n$2');
-  text = text.replace(/([^\n]) +(\uD83D[\uDC00-\uDFFF])/g, '$1\n$2');
-  text = text.replace(/([^\n]) +(\uD83E[\uDD00-\uDFFF])/g, '$1\n$2');
+  text = text.replace(/([^\n]) *(\uD83C[\uDF00-\uDFFF])/g, '$1\n\n$2');
+  text = text.replace(/([^\n]) *(\uD83D[\uDC00-\uDFFF])/g, '$1\n\n$2');
+  text = text.replace(/([^\n]) *(\uD83E[\uDD00-\uDFFF])/g, '$1\n\n$2');
 
   // Collapse 3+ newlines to max 2
   text = text.replace(/\n{3,}/g, '\n\n');
@@ -185,8 +185,8 @@ function renderQuestionTab(questionId, data) {
   sheet.getRange('A2:H5').merge()
     .setValue('【任務情境】\n' + ctx)
     .setBackground('#EBF3FB').setWrap(true).setVerticalAlignment('top');
-  sheet.setRowHeight(2, 20); sheet.setRowHeight(3, 20);
-  sheet.setRowHeight(4, 20); sheet.setRowHeight(5, 20);
+  sheet.setRowHeight(2, 60); sheet.setRowHeight(3, 60);
+  sheet.setRowHeight(4, 60); sheet.setRowHeight(5, 60);
 
   // === 區塊 3: 操作指示 ===
   sheet.getRange('A6:H6').merge()
@@ -259,17 +259,17 @@ function renderQuestionTab(questionId, data) {
   const cleanDataRow  = cleanTitleRow + 1;
   const cleanEndRow   = cleanDataRow + CLEAN_INPUT_ROWS - 1;
 
-  sheet.getRange(cleanLabelRow, 1, 1, 8).merge()
-    .setValue('✨ 步驟二：清洗後資料（在下方填寫欄位標題，然後貼上清洗後的資料）')
+  sheet.getRange(cleanLabelRow, 1, 1, 12).merge()
+    .setValue('✨ 步驟二：清洗後資料（在下方填寫欄位標題，然後貼上清洗後的資料。可自行新增輔助欄位，也可超出綠色範圍作答。）')
     .setBackground('#2E7D32').setFontColor('#FFFFFF').setFontWeight('bold');
 
-  sheet.getRange(cleanTitleRow, 1, 1, 8)
+  sheet.getRange(cleanTitleRow, 1, 1, 12)
     .setBackground('#C8E6C9')
     .setBorder(true, true, true, true, false, false, '#A5D6A7', SpreadsheetApp.BorderStyle.SOLID);
-  sheet.getRange(cleanTitleRow, 1).setValue('← 在此列填寫欄位標題').setFontStyle('italic').setFontColor('#555555');
+  sheet.getRange(cleanTitleRow, 1).setValue('← 在此列填寫欄位標題（可新增輔助欄位作為回答的一部分）').setFontStyle('italic').setFontColor('#555555');
 
   // 輸入區：淡綠色
-  sheet.getRange(cleanDataRow, 1, CLEAN_INPUT_ROWS, 8)
+  sheet.getRange(cleanDataRow, 1, CLEAN_INPUT_ROWS, 12)
     .setBackground('#F1F8E9')
     .setBorder(true, true, true, true, false, false, '#A5D6A7', SpreadsheetApp.BorderStyle.SOLID);
 
@@ -278,6 +278,8 @@ function renderQuestionTab(questionId, data) {
   sheet.getRange('Z3').setValue(sopEndRow).setFontColor(HIDDEN);
   sheet.getRange('Z4').setValue(cleanTitleRow).setFontColor(HIDDEN);
   sheet.getRange('Z5').setValue(cleanEndRow).setFontColor(HIDDEN);
+  // 在綠色區域最後一列的 Z 欄寫入文字標記（隨列移動，不受插入/刪除列影響）
+  sheet.getRange(cleanEndRow, 26).setValue('__CLEAN_END__').setFontColor(HIDDEN);
 
   // === 欄寬整理 ===
   sheet.setColumnWidth(1, 140);
@@ -312,21 +314,35 @@ function renderFeedback(sheet, score) {
   // 動態尋找是否已有舊的評分區塊
   let startRow = findRowByText(sheet, '📊 AI 盲區雷達診斷');
   
-  if (startRow !== -1) {
-    // 清除舊的評分區塊 (從 startRow 往下清空)
-    const lastRow = sheet.getLastRow();
-    if (lastRow >= startRow) {
-      const oldRange = sheet.getRange(startRow, 1, lastRow - startRow + 1, sheet.getLastColumn());
-      oldRange.breakApart(); // 解除合併儲存格
-      oldRange.clear();      // 清除內容、顏色、格式
-      // 將列高恢復預設
-      for (let r = startRow; r <= lastRow; r++) {
-        sheet.setRowHeight(r, 21);
+  if (startRow === -1) {
+    // 第一次提交，搜尋 Z 欄文字標記來定位綠色區域結尾（標記隨列移動）
+    const allZ = sheet.getRange(1, 26, sheet.getMaxRows(), 1).getValues();
+    let cleanEndRow = -1;
+    for (let i = 0; i < allZ.length; i++) {
+      if (String(allZ[i][0]).trim() === '__CLEAN_END__') {
+        cleanEndRow = i + 1;
+        break;
       }
     }
-  } else {
-    // 第一次提交，接在最後一列的下方
-    startRow = sheet.getLastRow() + 2;
+    if (cleanEndRow > 0) {
+      startRow = cleanEndRow + 2;
+    } else {
+      // 舊版題目沒有標記，fallback 到 Z5 數值
+      const z5 = sheet.getRange('Z5').getValue();
+      startRow = (z5 && Number(z5) > 0) ? Number(z5) + 2 : sheet.getLastRow() + 2;
+    }
+  }
+
+  // 清除舊的評分區塊或殘留底色 (從 startRow 往下清空)
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= startRow) {
+    const oldRange = sheet.getRange(startRow, 1, lastRow - startRow + 1, Math.max(sheet.getLastColumn(), 12));
+    oldRange.breakApart(); // 解除合併儲存格
+    oldRange.clear();      // 清除內容、顏色、格式
+    // 將列高恢復預設
+    for (let r = startRow; r <= lastRow; r++) {
+      sheet.setRowHeight(r, 21);
+    }
   }
 
   // 標題

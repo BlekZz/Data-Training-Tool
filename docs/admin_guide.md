@@ -35,10 +35,14 @@
     3. 將新版本的 `is_active` 設為 `TRUE`。
     *   *註：API 每次都會讀取 TRUE 的版本。*
 
-### 3. 查看稽核紀錄 (AuditLog)
-如果使用者反應失敗，請檢查 `AuditLog`：
-*   **status = error**: 會記錄詳細的 Error Message。
-*   **action_type**: 區分是 `generate-question` 還是 `submit-response` 出錯。
+### 3. 查看稽核紀錄 (AuditLog & ApiCallLog)
+如果使用者反應失敗，請依序檢查：
+*   **AuditLog**: 記錄最高層級的操作。
+    *   **status = error**: 會記錄詳細的 Error Message。
+    *   **action_type**: 區分是 `generate-question` 還是 `submit-response` 出錯。
+*   **ApiCallLog**: 記錄每次呼叫 Gemini 的網路狀態與重試。
+    *   **http_status = 400**: 通常是模型名稱錯誤或輸入格式有誤。
+    *   **http_status = 429**: API 請求太頻繁，可觀察 `attempt` 是否有成功重試。
 
 ---
 
@@ -54,12 +58,19 @@
 
 ### 1. 偵錯順序 (Troubleshooting Flow)
 當系統不穩定時，請遵循以下檢查順序：
-1.  **檢查 AuditLog**: 這是最重要的步驟。如果是程式報錯，這裡會有 `error_message`。
+1.  **檢查 AuditLog / ApiCallLog**: 這是最重要的步驟。如果是程式報錯，這裡會有 `error_message`。
 2.  **驗證使用者權限**: 檢查 `Users` 表格中該 Email 的 `status` 是否為 `active`。
-3.  **檢查模型狀態**: 在 `SystemConfig` 確認模型名稱是否仍然有效（Google 有時會更新模型名稱後綴）。
-4.  **確認 Web App 版本**: 確認 Web App 的 URL 是否為最新部署的版本。
+3.  **檢查模型狀態**: 在 `SystemConfig` 確認模型名稱是否仍然有效。
+4.  **確認 Web App 部署狀態**: (非常容易踩坑！) 確保後端更新後有正確部署。
 
 ### 2. 重置與清理
 *   **清空資料**: 若要清空所有紀錄，直接刪除 Questions/Responses/Scores 下方的資料列即可，但請**保留標題列**。
-*   **重新部署**: 任何後端 `.js` 檔案的更動，若未進行「New Deployment」，外部使用者都不會吃到更新。
+
+### 3. ⚠️ 重大部署陷阱 (Deployment Trap)
+任何後端 `.js` 檔案的更動（如使用 `clasp push`），**都不會自動套用**到前台的 `/exec` URL 上。
+必須執行：
+1. 進入 GAS 編輯器 -> 點選右上角「部署 (Deploy)」 -> 「管理部署作業 (Manage deployments)」。
+2. 點選左側運作中的版本，點擊右側鉛筆圖示 (Edit)。
+3. 在版本下拉選單選擇 **「建立新版本 (New version)」**，點選部署。
+> **切勿選擇「新增部署作業 (New deployment)」**，那會產生一個全新的 URL，導致所有使用者的前端斷線。
 

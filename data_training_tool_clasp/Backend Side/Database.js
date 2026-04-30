@@ -26,7 +26,7 @@ const Database = {
       JSON.stringify(questionData.sample_data),
       JSON.stringify(questionData.expected_health_check_answers),
       questionData.question_tab_url || '',
-      new Date().toISOString(),
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"),
       JSON.stringify(questionData.cleaned_data_template || null)
     ];
     sheet.appendRow(row);
@@ -46,7 +46,7 @@ const Database = {
       responseData.user_email,
       JSON.stringify(responseData.user_health_check_sop),
       JSON.stringify(responseData.user_cleaned_data),
-      new Date().toISOString(),
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"),
       'SUBMITTED'
     ];
     sheet.appendRow(row);
@@ -72,7 +72,7 @@ const Database = {
       scoreData.completeness_score,
       scoreData.evaluator_version || 'v1',
       scoreData.feedback_comment,
-      new Date().toISOString()
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss")
     ];
     sheet.appendRow(row);
   },
@@ -163,7 +163,7 @@ const Database = {
       if (statusIdx !== -1) newRow[statusIdx] = "active";
       
       const createdAtIndex = headers.indexOf('created_at');
-      if (createdAtIndex !== -1) newRow[createdAtIndex] = new Date().toISOString();
+      if (createdAtIndex !== -1) newRow[createdAtIndex] = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
       
       sheet.appendRow(newRow);
       return true;
@@ -226,7 +226,7 @@ const Database = {
         logData.related_id || "",
         logData.status || "unknown",
         logData.error_message || "",
-        new Date().toISOString()
+        Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss")
       ];
       sheet.appendRow(row);
     } catch (e) {
@@ -261,7 +261,7 @@ const Database = {
       const sheet = this.ensureApiCallLogSheet();
       const row = [
         generateId("AC"),
-        new Date().toISOString(),
+        Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"),
         logData.user_email || '',
         logData.action || '',
         logData.model_name || '',

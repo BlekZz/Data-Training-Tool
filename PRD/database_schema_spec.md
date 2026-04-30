@@ -5,6 +5,7 @@
 
 **Strategy**: Single Backend Google Sheet with Multiple Tabs.
 **Sheet ID**: `1a-Po10_gmaLxfEWwSU31hQjoW0Jqpv_t4U9YM4KZnNw`
+**Timezone**: All timestamps are formatted as `yyyy-MM-dd HH:mm:ss` based on the script's local timezone (v1.3+).
 
 ---
 
@@ -46,7 +47,7 @@
 | `sample_data_snapshot` | JSON 字串，約 10~15 筆微型高密度資料 |
 | `expected_health_check_answers` | JSON 字串，標準答案預期 |
 | `question_tab_url` | 題目在 User Sheet 中的分頁 URL |
-| `created_at` | 建立時間 (ISO 8601) |
+| `created_at` | 建立時間 (Local Time) |
 | `cleaned_data_template` | JSON 字串，sample_data 的完整正確版本（v1.1 新增，col 13） |
 
 > **設計重點**: `cleaned_data_template` 於出題時由 Gemini 一次性生成並儲存。評分時直接從此欄位讀取，不再重新生成，確保標準答案一致性。
@@ -61,7 +62,7 @@
 | `user_email` | 提交者 |
 | `user_health_check_sop` | JSON 字串，使用者填寫的健檢 SOP 表單 `[{field, error_type, strategy, note}]` |
 | `user_cleaned_data` | JSON 字串，使用者清洗後的最終資料 |
-| `submitted_at` | 提交時間 (ISO 8601) |
+| `submitted_at` | 提交時間 (Local Time) |
 | `response_status` | 狀態 (SUBMITTED) |
 
 ## 4. Scores
@@ -80,7 +81,7 @@
 | `completeness_score` | 清洗完整度 (0-5) |
 | `evaluator_version` | AI 評分器版本 (e.g. `eval_v1.1`) |
 | `feedback_comment` | AI 盲區雷達診斷文字 |
-| `scored_at` | 評分時間 (ISO 8601) |
+| `scored_at` | 評分時間 (Local Time) |
 
 ## 5. PromptVersions
 紀錄 Prompt 版本與完整內容，支援即時切換與版本追溯。
@@ -126,7 +127,7 @@
 | `related_id` | 關聯 ID (question_id / response_id) |
 | `status` | success / error |
 | `error_message` | 錯誤堆疊訊息 |
-| `timestamp` | 操作時間 (ISO 8601) |
+| `timestamp` | 操作時間 (Local Time) |
 
 ## 8. ApiCallLog
 紀錄每一次 Gemini API 呼叫的詳細記錄（含 retry），用於效能監控與除錯。若工作表不存在會自動建立（v1.1 新增）。
@@ -134,7 +135,7 @@
 | 欄位 | 說明 |
 |------|------|
 | `log_id` | 唯一識別 `AC_<timestamp>_<random>` |
-| `timestamp` | 呼叫時間 (ISO 8601) |
+| `timestamp` | 呼叫時間 (Local Time) |
 | `user_email` | 呼叫者 |
 | `action` | 動作類型 (generate-question / evaluate-response) |
 | `model_name` | 使用的模型名稱 |

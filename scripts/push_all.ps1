@@ -63,7 +63,9 @@ foreach ($s in $Scripts) {
     $claspObj | ConvertTo-Json -Depth 5 | Set-Content $ClaspJson -Encoding UTF8
 
     try {
+        Push-Location $UserSideDir
         $output = & npx clasp push --force 2>&1
+        Pop-Location
         if ($LASTEXITCODE -ne 0) { throw $output }
         Write-Host " OK" -ForegroundColor Green
         $success++

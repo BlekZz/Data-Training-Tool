@@ -83,3 +83,36 @@ function diagnose_Models() {
   const result = GeminiClient.listAvailableModels(TEST_API_KEY);
   Logger.log("📋 可用模型列表:\n" + result);
 }
+
+// ============================================================
+// 診斷工具: 測試 AuditLog 與 ApiCallLog 寫入
+// ============================================================
+function diagnose_Loggers() {
+  try {
+    Logger.log("Testing AuditLog...");
+    const sheetL = Database.ensureAuditLogSheet();
+    Logger.log("AuditLog sheet OK: " + sheetL.getName());
+    Database.saveAuditLog({
+      user_email: "test@example.com",
+      action_type: "test-log",
+      status: "success"
+    });
+    Logger.log("✅ AuditLog write completed.");
+  } catch (e) {
+    Logger.log("❌ AuditLog error: " + e.toString());
+  }
+
+  try {
+    Logger.log("Testing ApiCallLog...");
+    const sheetA = Database.ensureApiCallLogSheet();
+    Logger.log("ApiCallLog sheet OK: " + sheetA.getName());
+    Database.saveApiCallLog({
+      user_email: "test@example.com",
+      action: "test-api",
+      success: true
+    });
+    Logger.log("✅ ApiCallLog write completed.");
+  } catch (e) {
+    Logger.log("❌ ApiCallLog error: " + e.toString());
+  }
+}
