@@ -3,20 +3,85 @@
 <head>
   <base target="_top">
   <style>
-    body { font-family: 'Inter', -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f9fafb; color: #1f2937; overflow: hidden; }
-    .loader { width: 48px; height: 48px; border: 5px solid #E5E7EB; border-bottom-color: #6366F1; border-radius: 50%; display: inline-block; box-sizing: border-box; animation: rotation 1s linear infinite; }
-    @keyframes rotation { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100vh; background: #f9fafb; color: #1f2937;
+      overflow: hidden;
+    }
+
+    /* === Loading state === */
+    #loading-view { display: flex; flex-direction: column; align-items: center; }
+    .loader {
+      width: 48px; height: 48px;
+      border: 5px solid #E5E7EB; border-bottom-color: #6366F1;
+      border-radius: 50%; animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .status-text { margin-top: 20px; font-weight: 600; font-size: 16px; color: #374151; }
-    .log-text { margin-top: 8px; font-size: 13px; color: #6B7280; text-align: center; padding: 0 20px; }
-    .progress-container { width: 80%; background-color: #E5E7EB; border-radius: 10px; margin-top: 20px; height: 6px; overflow: hidden; }
+    .log-text { margin-top: 8px; font-size: 13px; color: #6B7280; text-align: center; padding: 0 24px; min-height: 18px; }
+    .progress-container { width: 80%; background: #E5E7EB; border-radius: 10px; margin-top: 20px; height: 6px; overflow: hidden; }
     .progress-bar { width: 0%; height: 100%; background: linear-gradient(90deg, #6366F1, #A855F7); transition: width 0.5s ease; }
+
+    /* === Result views === */
+    #error-view, #success-view {
+      display: none; flex-direction: column;
+      align-items: center; padding: 8px 24px 0; text-align: center; width: 100%;
+    }
+    .result-icon { font-size: 36px; margin-bottom: 10px; }
+    .result-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+    .result-body {
+      font-size: 13px; color: #374151; border-radius: 8px;
+      padding: 10px 14px; line-height: 1.6;
+      margin-bottom: 16px; width: 100%; text-align: left;
+    }
+    #error-view .result-title { color: #DC2626; }
+    #error-view .result-body {
+      background: #FEF2F2; border: 1px solid #FECACA;
+      max-height: 90px; overflow-y: auto;
+    }
+    #success-view .result-title { color: #16A34A; }
+    #success-view .result-body { background: #F0FDF4; border: 1px solid #BBF7D0; }
+    .score-line { font-size: 22px; font-weight: 800; color: #16A34A; margin-bottom: 6px; }
+
+    .btn {
+      padding: 8px 28px; color: #fff; border: none;
+      border-radius: 6px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    #error-view .btn { background: #374151; }
+    #success-view .btn { background: #16A34A; }
   </style>
 </head>
 <body>
-  <div class="loader"></div>
-  <div class="status-text" id="status">AI 導師正在批改...</div>
-  <div class="log-text" id="log">正在讀取你的診斷報告...</div>
-  <div class="progress-container"><div class="progress-bar" id="pb"></div></div>
+
+  <!-- Loading -->
+  <div id="loading-view">
+    <div class="loader"></div>
+    <div class="status-text">AI 導師正在批改...</div>
+    <div class="log-text" id="log">正在讀取你的診斷報告...</div>
+    <div class="progress-container"><div class="progress-bar" id="pb"></div></div>
+  </div>
+
+  <!-- Success -->
+  <div id="success-view">
+    <div class="result-icon">✅</div>
+    <div class="result-title">評分完成！</div>
+    <div class="score-line" id="score-display"></div>
+    <div class="result-body">評分結果已寫入工作表。<br>請往下捲動查看「📊 AI 盲區雷達診斷」區塊。</div>
+    <button class="btn" onclick="google.script.host.close()">查看結果</button>
+  </div>
+
+  <!-- Error -->
+  <div id="error-view">
+    <div class="result-icon">❌</div>
+    <div class="result-title">提交失敗</div>
+    <div class="result-body" id="error-msg"></div>
+    <button class="btn" onclick="google.script.host.close()">關閉</button>
+  </div>
 
   <script>
     const logs = [
@@ -27,36 +92,50 @@
       "正在撰寫 AI 盲區雷達診斷..."
     ];
     let step = 0;
-    const pb = document.getElementById('pb');
-    const logEl = document.getElementById('log');
-    
-    // 模擬進度條
-    const interval = setInterval(() => {
+    const pb  = document.getElementById('pb');
+    const log = document.getElementById('log');
+
+    const ticker = setInterval(function() {
       if (step < logs.length) {
-        logEl.innerText = logs[step];
-        pb.style.width = ((step + 1) * 20) + "%";
+        log.innerText = logs[step];
+        pb.style.width = ((step + 1) * 20) + '%';
         step++;
       }
     }, 3000);
 
-    // 視窗載入後立即執行
+    function showError(msg) {
+      clearInterval(ticker);
+      document.getElementById('loading-view').style.display = 'none';
+      document.getElementById('error-msg').innerText = msg || '未知錯誤，請重試。';
+      document.getElementById('error-view').style.display = 'flex';
+    }
+
+    function showSuccess(score) {
+      clearInterval(ticker);
+      document.getElementById('loading-view').style.display = 'none';
+      if (score && score.overall_score !== undefined) {
+        document.getElementById('score-display').innerText =
+          score.overall_score + ' / 20 分';
+      }
+      document.getElementById('success-view').style.display = 'flex';
+    }
+
     window.onload = function() {
-      // payload 由 HtmlService 動態注入到全域
       if (typeof payload === 'undefined') {
-        google.script.run.showErrorMessage("Payload missing");
-        google.script.host.close();
+        showError('系統錯誤：資料未傳入，請關閉後重新操作。');
         return;
       }
 
       google.script.run
         .withSuccessHandler(function(result) {
-          clearInterval(interval);
-          google.script.host.close();
+          if (!result || result.status === 'error') {
+            showError(result ? result.message : '伺服器回傳空值，請重試。');
+          } else {
+            showSuccess(result.score);
+          }
         })
-        .withFailureHandler(function(error) {
-          clearInterval(interval);
-          google.script.run.showErrorMessage(error.toString());
-          google.script.host.close();
+        .withFailureHandler(function(err) {
+          showError(err.message || err.toString());
         })
         .performFullSubmit(payload);
     };

@@ -1,0 +1,27 @@
+{
+  "description": "User Side GAS script IDs managed for global push. All entries must have Editor/Owner access via Shared Drive.",
+  "template_script_id": "15wCum8Lk8-y8uZLk5vOSR0SYCW44FFuUqDpV-9TTHHeQHKZepLTB7N_n",
+  "managed_scripts": [
+    {
+      "id": "15wCum8Lk8-y8uZLk5vOSR0SYCW44FFuUqDpV-9TTHHeQHKZepLTB7N_n",
+      "label": "Template (User Side Master)",
+      "email": "blake.lee@inboundmarketing.tw",
+      "note": "Source of truth — always included in push"
+    },
+    {
+      "id": "1EiADYGrWwWRB42G7W8b4ZK__cVcEGRGLi-Gi1O87V_DeGVCA_hDNy9eF",
+      "label": "Blake",
+      "email": "blake.lee@inboundmarketing.tw"
+    },
+    {
+      "id": "1v68xz_nHAGwHHqg9mZBYpcUIhZ30uYUL3Kj9-OITnI5GvBPbJTmBo2qF",
+      "label": "Kristine",
+      "email": "kristine.chen@inboundmarketing.tw"
+    },
+    {
+      "id": "1AWxRJC2esDg0Cn-Ge1YjrlQjnqMvaPO9KJBTeE3S7f4xzNqmx6QCkX7T",
+      "label": "GS HR",
+      "email": "gs.hr@gsmarketing.tw"
+    }
+  ]
+}

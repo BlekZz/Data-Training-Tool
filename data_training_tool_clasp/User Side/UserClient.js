@@ -3,6 +3,8 @@
  * 請將此段程式碼貼在「使用者 (實習生)」的 Google Sheet Apps Script 中
  */
 
+const CLIENT_VERSION = "1.1.0";
+
 // ============================================================
 // 1. 設定區：請修改下方的 Web App URL
 // ============================================================
@@ -88,8 +90,8 @@ function setupHomePage() {
 function generateNewQuestion() {
   const ui = SpreadsheetApp.getUi();
   const html = HtmlService.createHtmlOutputFromFile('LoadingDialog')
-      .setWidth(400)
-      .setHeight(250);
+      .setWidth(420)
+      .setHeight(300);
   ui.showModalDialog(html, 'AI 題庫生成中...');
 }
 
@@ -114,12 +116,6 @@ function performFullGeneration() {
   }
 }
 
-/**
- * 輔助函式：供彈窗呼叫，顯示錯誤並確保 UI 恢復
- */
-function showErrorMessage(msg) {
-  SpreadsheetApp.getUi().alert('❌ 生成失敗\n\n原因：' + msg);
-}
 
 /**
  * 真正的後端生成邏輯
@@ -291,8 +287,6 @@ function renderQuestionTab(questionId, data) {
   sheet.setFrozenRows(1);
   sheet.activate();
 
-  // 這個 alert 會同時關閉 Loading Dialog
-  SpreadsheetApp.getUi().alert('🆕 題目已產生！\n\n• 🟡 淡黃色 = 步驟一健檢 SOP（填地雷記錄）\n• 🟢 淡綠色 = 步驟二清洗後資料\n\n完成後點選選單「3. 提交本題回答」。');
 }
 
 // ============================================================
@@ -505,8 +499,8 @@ function submitCurrentResponse() {
 
   // --- Step 3: 開啟評分彈窗 (由彈窗腳本執行 POST) ---
   const html = HtmlService.createHtmlOutputFromFile('SubmitLoadingDialog')
-      .setWidth(400)
-      .setHeight(250);
+      .setWidth(420)
+      .setHeight(300);
   
   // 將資料暫存到全域，供彈窗讀取（或直接傳遞）
   // 這裡使用簡單的 JSON 傳遞方式
@@ -521,10 +515,11 @@ function submitCurrentResponse() {
 function performFullSubmit(payload) {
   try {
     const result = runSubmitLogic(payload);
-    handleSubmitSuccess(result);
+    if (result.status === 'success') {
+      handleSubmitSuccess(result);
+    }
     return result;
   } catch (e) {
-    showErrorMessage(e.toString());
     return { status: 'error', message: e.toString() };
   }
 }
@@ -552,42 +547,32 @@ function runSubmitLogic(payload) {
 function handleSubmitSuccess(result) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
-  
-  if (result.status === 'success') {
-    renderFeedback(sheet, result.score);
 
-    // --- 寫入分數到 Home 分頁 ---
-    try {
-      const home = ss.getSheetByName('Home');
-      if (home) {
-        const domain = home.getRange('B5').getValue();
-        const difficulty = home.getRange('B6').getValue();
-        const date = new Date().toLocaleString();
-        const totalScore = result.score.overall_score + ' / 20';
-        const feedback = formatDisplayText(result.score.feedback_comment);
+  renderFeedback(sheet, result.score);
 
-        const historyStartRow = 10;
-        // 檢查是否已有標題
-        if (home.getRange(historyStartRow, 1).getValue() !== '做題日期') {
-          home.getRange(historyStartRow, 1, 1, 5)
-            .setValues([['做題日期', '產業領域', '難度', '總分', '文字診斷']])
-            .setBackground('#E8E8F5').setFontWeight('bold');
-          
-          home.setColumnWidth(4, 80); // 總分寬度
-          home.setColumnWidth(5, 500); // 評語寬度
-        }
-        // 在標題下方插入新列
-        home.insertRowAfter(historyStartRow);
-        home.getRange(historyStartRow + 1, 1, 1, 5)
-            .setValues([[date, domain, difficulty, totalScore, feedback]])
-            .setWrap(true).setVerticalAlignment('top');
+  try {
+    const home = ss.getSheetByName('Home');
+    if (home) {
+      const domain = home.getRange('B5').getValue();
+      const difficulty = home.getRange('B6').getValue();
+      const date = new Date().toLocaleString();
+      const totalScore = result.score.overall_score + ' / 20';
+      const feedback = formatDisplayText(result.score.feedback_comment);
+
+      const historyStartRow = 10;
+      if (home.getRange(historyStartRow, 1).getValue() !== '做題日期') {
+        home.getRange(historyStartRow, 1, 1, 5)
+          .setValues([['做題日期', '產業領域', '難度', '總分', '文字診斷']])
+          .setBackground('#E8E8F5').setFontWeight('bold');
+        home.setColumnWidth(4, 80);
+        home.setColumnWidth(5, 500);
       }
-    } catch(e) {
-      console.warn("Failed to write to Home: " + e);
+      home.insertRowAfter(historyStartRow);
+      home.getRange(historyStartRow + 1, 1, 1, 5)
+          .setValues([[date, domain, difficulty, totalScore, feedback]])
+          .setWrap(true).setVerticalAlignment('top');
     }
-
-    SpreadsheetApp.getUi().alert('✅ 評分完成！請往下捲動查看「📊 AI 盲區雷達診斷」區塊。');
-  } else {
-    showErrorMessage(result.message);
+  } catch(e) {
+    console.warn("Failed to write to Home: " + e);
   }
 }
